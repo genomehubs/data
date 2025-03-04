@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 
 import argparse
-import requests
 import os
-
-
-from conditional_import import emit_event, flow, task, NO_CACHE
-from shared_tasks import get_filenames
-from shared_args import API_URL, INDEX_TYPE, QUERY_OPTIONS, ROOT_TAXID, WORK_DIR
 from urllib.parse import urlencode
+
+import requests
+from conditional_import import emit_event, flow, task
+from shared_args import API_URL, INDEX_TYPE, QUERY_OPTIONS, ROOT_TAXID, WORK_DIR
 
 
 @task()
-def fetch_genomehubs_list_file(root_taxid: str, list_file: str, index_type: str, api_url: str, query_options: str = None) -> bool:
+def fetch_genomehubs_list_file(
+    root_taxid: str,
+    list_file: str,
+    index_type: str,
+    api_url: str,
+    query_options: str = None,
+) -> bool:
     """
     Fetch the list of target records.
 
@@ -37,7 +41,7 @@ def fetch_genomehubs_list_file(root_taxid: str, list_file: str, index_type: str,
         options["query"] = f"tax_tree({root_taxid})"
     else:
         options["query"] += f" AND tax_tree({root_taxid})"
-    url = f"{api_url}/search?{urlencode(options).replace("+", "%20")}"
+    url = f"{api_url}/search?{urlencode(options).replace('+', '%20')}"
 
     print(f"Fetching records from {url}")
     # Fetch the list of target records
@@ -53,7 +57,13 @@ def fetch_genomehubs_list_file(root_taxid: str, list_file: str, index_type: str,
 
 
 @flow()
-def fetch_genomehubs_target_list(root_taxid: str, work_dir: str, api_url: str, index_type: str = "taxon", query_options: str = None) -> None:
+def fetch_genomehubs_target_list(
+    root_taxid: str,
+    work_dir: str,
+    api_url: str,
+    index_type: str = "taxon",
+    query_options: str = None,
+) -> None:
     """
     Fetch lists of target records and assemblies.
 
@@ -72,7 +82,7 @@ def fetch_genomehubs_target_list(root_taxid: str, work_dir: str, api_url: str, i
 
     # Set the output file path
     list_file = f"{work_dir}/{index_type}_list.tsv"
-    
+
     # Fetch the target list
     record_count = fetch_genomehubs_list_file(
         root_taxid=root_taxid,
@@ -88,7 +98,7 @@ def fetch_genomehubs_target_list(root_taxid: str, work_dir: str, api_url: str, i
             "prefect.resource.id": f"fetch.genomehubs.{index_type}.list.{root_taxid}",
             "prefect.resource.type": "fetch.genomehubs.target.list",
         },
-        payload={f"record_count": record_count},
+        payload={"record_count": record_count},
     )
     return record_count
 

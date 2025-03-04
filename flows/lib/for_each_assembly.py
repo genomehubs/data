@@ -5,16 +5,8 @@ import os
 from urllib.parse import urlencode
 
 import requests
-from conditional_import import NO_CACHE
-from conditional_import import emit_event
-from conditional_import import flow
-from conditional_import import task
-from shared_args import API_URL
-from shared_args import INDEX_TYPE
-from shared_args import QUERY_OPTIONS
-from shared_args import ROOT_TAXID
-from shared_args import WORK_DIR
-from shared_tasks import get_filenames
+from conditional_import import emit_event, flow, task
+from shared_args import INPUT_PATH, WORK_DIR
 
 
 @task()
@@ -106,7 +98,7 @@ def fetch_genomehubs_target_list(
             "prefect.resource.id": f"fetch.genomehubs.{index_type}.list.{root_taxid}",
             "prefect.resource.type": "fetch.genomehubs.target.list",
         },
-        payload={f"record_count": record_count},
+        payload={"record_count": record_count},
     )
     return record_count
 

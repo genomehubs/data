@@ -4,16 +4,13 @@ import argparse
 import gzip
 import os
 import shutil
-import sys
-from os.path import abspath, dirname
 
 import boto3
 import utils
-
-from conditional_import import emit_event, flow, task, NO_CACHE
+from conditional_import import NO_CACHE, emit_event, flow, task
+from shared_args import S3_PATH, WORK_DIR, YAML_PATH
 from shared_tasks import get_filenames
 from utils import Config
-from shared_args import S3_PATH, WORK_DIR, YAML_PATH
 
 
 @task(retries=2, retry_delay_seconds=2)

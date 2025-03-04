@@ -35,9 +35,8 @@ else:
     # Import Prefect functions if the environment variable is not set
     from prefect import flow, task
     from prefect.cache_policies import NO_CACHE
-    from prefect.runtime.task_run import run_count
     from prefect.events import emit_event
-
+    from prefect.runtime.task_run import run_count
 
 
 __all__ = ["flow", "task", "emit_event", "run_count", "skip_prefect", "NO_CACHE"]

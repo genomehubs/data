@@ -10,7 +10,6 @@ from typing import Optional
 
 from conditional_import import flow
 from fetch_previous_file_pair import fetch_previous_file_pair
-from validate_file_pair import validate_file_pair
 from shared_args import (
     APPEND,
     DRY_RUN,
@@ -21,7 +20,7 @@ from shared_args import (
     WORK_DIR,
     YAML_PATH,
 )
-
+from validate_file_pair import validate_file_pair
 
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))

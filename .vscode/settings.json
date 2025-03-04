@@ -8,6 +8,7 @@
     },
     "editor.defaultFormatter": "ms-python.black-formatter"
   },
+  "black-formatter.args": ["--line-length", "88"],
   "yaml.schemas": {
     "swaggerviewer:openapi": "file:///Users/rchallis/projects/genomehubs/genomehubs/src/genomehubs-api/src/api-v2.yaml"
   },

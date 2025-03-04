@@ -17,7 +17,7 @@ if __name__ == "__main__" and __package__ is None:
     __package__ = "flows"
 
 from flows.lib import utils  # noqa: E402
-from flows.lib.conditional_import import flow, task, run_count  # noqa: E402
+from flows.lib.conditional_import import flow, run_count, task  # noqa: E402
 from flows.lib.utils import Config, Parser  # noqa: E402
 from flows.parsers.args import parse_args  # noqa: E402
 

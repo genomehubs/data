@@ -124,7 +124,7 @@ def update_ncbi_datasets(root_taxid: str, output_path: str, s3_path: str) -> Non
         emit_event(
             event="update.ncbi.datasets.finished",
             resource={
-                "prefect.resource.id": f"fetch.datasets.{file_path}",
+                "prefect.resource.id": f"fetch.datasets.{output_path}",
                 "prefect.resource.type": "ncbi.datasets",
                 "prefect.resource.matches.previous": "yes" if status else "no",
             },
@@ -137,7 +137,7 @@ def update_ncbi_datasets(root_taxid: str, output_path: str, s3_path: str) -> Non
 def parse_args():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Fetch and parse NCBI datasets.")
-    
+
     command_line_args = [ROOT_TAXID, OUTPUT_PATH, S3_PATH_OPTIONAL]
     for arg in command_line_args:
         parser.add_argument(*arg["flags"], **arg["keys"])

@@ -2,7 +2,7 @@
 
 import os
 
-from conditional_import import task, NO_CACHE
+from conditional_import import NO_CACHE, task
 from utils import Config
 
 

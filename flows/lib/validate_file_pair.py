@@ -11,8 +11,15 @@ from typing import Optional
 import boto3
 import utils
 from conditional_import import emit_event, flow, task
+from shared_args import (
+    MIN_ASSIGNED,
+    MIN_VALID,
+    S3_PATH,
+    TAXDUMP_PATH,
+    WORK_DIR,
+    YAML_PATH,
+)
 from shared_tasks import get_filenames
-from shared_args import MIN_ASSIGNED, MIN_VALID, S3_PATH, TAXDUMP_PATH, WORK_DIR, YAML_PATH
 
 
 @task(log_prints=True)
@@ -167,7 +174,14 @@ def parse_args():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Fetch previous YAML/TSV files.")
 
-    command_line_args = [YAML_PATH, WORK_DIR, S3_PATH, TAXDUMP_PATH, MIN_VALID, MIN_ASSIGNED]
+    command_line_args = [
+        YAML_PATH,
+        WORK_DIR,
+        S3_PATH,
+        TAXDUMP_PATH,
+        MIN_VALID,
+        MIN_ASSIGNED,
+    ]
     for arg in command_line_args:
         parser.add_argument(*arg["flags"], **arg["keys"])
 
