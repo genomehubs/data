@@ -1,0 +1,15 @@
+{
+  "git.ignoreLimitWarning": true,
+  "editor.formatOnSave": true,
+  "flake8.args": ["--max-line-length=88"],
+  "[python]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports.python": "explicit"
+    },
+    "editor.defaultFormatter": "ms-python.black-formatter"
+  },
+  "yaml.schemas": {
+    "swaggerviewer:openapi": "file:///Users/rchallis/projects/genomehubs/genomehubs/src/genomehubs-api/src/api-v2.yaml"
+  },
+  "restructuredtext.pythonRecommendation.disabled": true
+}
