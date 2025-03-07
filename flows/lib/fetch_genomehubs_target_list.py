@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 
-import argparse
 import os
 from urllib.parse import urlencode
 
 import requests
 from conditional_import import emit_event, flow, task
-from shared_args import INPUT_PATH, WORK_DIR
+from shared_args import (
+    API_URL,
+    INDEX_TYPE,
+    QUERY_OPTIONS,
+    ROOT_TAXID,
+    WORK_DIR,
+    default,
+    parse_args,
+)
 
 
 @task()
@@ -103,26 +110,23 @@ def fetch_genomehubs_target_list(
     return record_count
 
 
-def parse_args():
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Fetch previous YAML/TSV files.")
-
-    command_line_args = [INPUT_PATH, WORK_DIR]
-    for arg in command_line_args:
-        parser.add_argument(*arg["flags"], **arg["keys"])
-
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
     """Run the flow."""
-    args = parse_args()
+    args = parse_args(
+        [
+            default(ROOT_TAXID, "2759"),
+            WORK_DIR,
+            default(INDEX_TYPE, "taxon"),
+            default(API_URL, "https://goat.genomehubs.org/api/v2"),
+            QUERY_OPTIONS,
+        ],
+        "Fetch a target list from a GenomeHubs site.",
+    )
 
-    # Read the assembly_list file
-    assembly_list_file = "path/to/assembly_list.txt"  # Update with the correct path
-    with open(assembly_list_file, "r") as file:
-        assembly_list = file.readlines()
-
-    # Run the flow for each line in the assembly_list file
-    for assembly in assembly_list:
-        assembly = assembly.strip()  # Remove any leading/trailing whitespace
+    fetch_genomehubs_target_list(
+        root_taxid=args.root_taxid,
+        work_dir=args.work_dir,
+        index_type=args.index_type,
+        api_url=args.api_url,
+        query_options=args.query_options,
+    )

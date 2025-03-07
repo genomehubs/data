@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import argparse
 import hashlib
 import os
 import subprocess
@@ -8,7 +7,7 @@ import subprocess
 import boto3
 from botocore.exceptions import ClientError
 from conditional_import import emit_event, flow, task
-from shared_args import OUTPUT_PATH, ROOT_TAXID, S3_PATH_OPTIONAL
+from shared_args import OUTPUT_PATH, ROOT_TAXID, S3_PATH, default, parse_args, required
 
 
 @task(retries=2, retry_delay_seconds=2, log_prints=True)
@@ -134,19 +133,11 @@ def update_ncbi_datasets(root_taxid: str, output_path: str, s3_path: str) -> Non
     return False
 
 
-def parse_args():
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Fetch and parse NCBI datasets.")
-
-    command_line_args = [ROOT_TAXID, OUTPUT_PATH, S3_PATH_OPTIONAL]
-    for arg in command_line_args:
-        parser.add_argument(*arg["flags"], **arg["keys"])
-
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
     """Run the flow."""
-    args = parse_args()
+    args = parse_args(
+        [default(ROOT_TAXID, "taxon"), required(OUTPUT_PATH), S3_PATH],
+        "Fetch assembly metadata from NCBI datasets.",
+    )
 
     update_ncbi_datasets(**vars(args))

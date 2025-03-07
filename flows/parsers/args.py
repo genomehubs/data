@@ -10,13 +10,10 @@ if __name__ == "__main__" and __package__ is None:
     __package__ = "flows"
 
 from flows.lib.shared_args import APPEND, INPUT_PATH, YAML_PATH
+from flows.lib.shared_args import parse_args as _parse_args
+from flows.lib.shared_args import required
 
 
 def parse_args(description: str = "An input file parser") -> argparse.Namespace:
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description=description)
-    command_line_args = [INPUT_PATH, YAML_PATH, APPEND]
-    for arg in command_line_args:
-        parser.add_argument(*arg["flags"], **arg["keys"])
-
-    return parser.parse_args()
+    return _parse_args([required(INPUT_PATH), required(YAML_PATH), APPEND], description)

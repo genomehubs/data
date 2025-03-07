@@ -3,7 +3,6 @@
 # sourcery skip: avoid-builtin-shadow
 import os
 import sys
-from argparse import Action, ArgumentParser, Namespace
 from enum import Enum
 from os.path import abspath, dirname
 from typing import Optional
@@ -19,7 +18,10 @@ from shared_args import (
     TAXDUMP_PATH,
     WORK_DIR,
     YAML_PATH,
+    parse_args,
+    required,
 )
+from utils import enum_action
 from validate_file_pair import validate_file_pair
 
 if __name__ == "__main__" and __package__ is None:
@@ -36,23 +38,6 @@ class Parser(str, Enum):
 
     # Dynamically add values from PARSERS.ParserEnum to Parser
     locals().update(PARSERS.ParserEnum.__members__)
-
-
-def enum_action(enum_class):
-    class EnumAction(Action):
-        def __init__(self, *args, **kwargs):
-            table = {member.name.casefold(): member for member in enum_class}
-            super().__init__(
-                *args,
-                choices=table,
-                **kwargs,
-            )
-            self.table = table
-
-        def __call__(self, parser, namespace, values, option_string=None):
-            setattr(namespace, self.dest, self.table[values])
-
-    return EnumAction
 
 
 @flow()
@@ -98,40 +83,24 @@ def fetch_parse_validate(
     )
 
 
-def parse_args() -> Namespace:
-    """
-    Parse command-line arguments.
-
-    Returns:
-        Namespace: The parsed arguments.
-    """
-    parser = ArgumentParser(description="Fetch previous TSV file.")
-
-    parser.add_argument(
-        "-p",
-        "--parser",
-        action=enum_action(Parser),
-        required=True,
-        help="Parser to use.",
-    )
-
-    command_line_args = [
-        YAML_PATH,
-        S3_PATH,
-        WORK_DIR,
-        TAXDUMP_PATH,
-        APPEND,
-        DRY_RUN,
-        MIN_VALID,
-        MIN_ASSIGNED,
-    ]
-    for arg in command_line_args:
-        parser.add_argument(*arg["flags"], **arg["keys"])
-
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
     """Run the flow."""
-    args = parse_args()
+    parser = {
+        "flags": ["-p", "--parser"],
+        "keys": {"help": "Parser to use.", "action": enum_action(Parser), "type": str},
+    }
+    args = parse_args(
+        [
+            required(parser),
+            required(YAML_PATH),
+            required(S3_PATH),
+            WORK_DIR,
+            TAXDUMP_PATH,
+            APPEND,
+            DRY_RUN,
+            MIN_VALID,
+            MIN_ASSIGNED,
+        ],
+        "Fetch, parse, and validate the TSV file.",
+    )
     fetch_parse_validate(**vars(args))

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import argparse
 import gzip
 import os
 import shutil
@@ -8,7 +7,7 @@ import shutil
 import boto3
 import utils
 from conditional_import import NO_CACHE, emit_event, flow, task
-from shared_args import S3_PATH, WORK_DIR, YAML_PATH
+from shared_args import S3_PATH, WORK_DIR, YAML_PATH, parse_args, required
 from shared_tasks import get_filenames
 from utils import Config
 
@@ -148,20 +147,12 @@ def fetch_previous_file_pair(yaml_path: str, s3_path: str, work_dir: str) -> Non
     return status
 
 
-def parse_args():
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Fetch previous YAML/TSV files.")
-
-    command_line_args = [YAML_PATH, S3_PATH, WORK_DIR]
-    for arg in command_line_args:
-        parser.add_argument(*arg["flags"], **arg["keys"])
-
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
     """Run the flow."""
-    args = parse_args()
+    args = parse_args(
+        [required(YAML_PATH), required(S3_PATH), WORK_DIR],
+        "Fetch previous YAML/TSV files.",
+    )
 
     fetch_previous_file_pair(
         yaml_path=args.yaml_path,

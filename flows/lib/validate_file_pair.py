@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import argparse
 import json
 import os
 import shutil
@@ -18,6 +17,8 @@ from shared_args import (
     TAXDUMP_PATH,
     WORK_DIR,
     YAML_PATH,
+    parse_args,
+    required,
 )
 from shared_tasks import get_filenames
 
@@ -170,26 +171,18 @@ def validate_file_pair(
     return status
 
 
-def parse_args():
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Fetch previous YAML/TSV files.")
-
-    command_line_args = [
-        YAML_PATH,
-        WORK_DIR,
-        S3_PATH,
-        TAXDUMP_PATH,
-        MIN_VALID,
-        MIN_ASSIGNED,
-    ]
-    for arg in command_line_args:
-        parser.add_argument(*arg["flags"], **arg["keys"])
-
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
     """Run the flow."""
-    args = parse_args()
+    args = parse_args(
+        [
+            required(YAML_PATH),
+            WORK_DIR,
+            required(S3_PATH),
+            TAXDUMP_PATH,
+            MIN_VALID,
+            MIN_ASSIGNED,
+        ],
+        "Validate a YAML/TSV file pair.",
+    )
 
     validate_file_pair(**vars(args))

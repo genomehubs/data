@@ -127,10 +127,10 @@ subgraph FetchResources
   direction TB
   FetchNCBITaxDump --> NCBITaxdump@{shape: docs, label: "NCBITaxdump\n_.dmp_"}
   FetchGoaTTargetList --> TargetTaxonList@{shape: doc, label: "TargetTaxonList\n_.tsv_"}
-  FetchGoaTTargetList --> TargetAccessionList@{shape: doc, label: "TargetAccessionList\n_.tsv_"}
+  FetchGoaTTargetList --> TargetAssemblyList@{shape: doc, label: "TargetAssemblyList\n_.tsv_"}
 end
 
-subgraph ForEachAccession
+subgraph ForEachAssembly
   direction TB
   SnapshotExists{SnapshotExists} -->|yes| ESSnapshot@{shape: db, label: "ESSnapshot\n_features_"}
   SnapshotExists -->|no| FindFiles@{label: "FindFiles\n_GAP/TaxDB/Lustre_"}
@@ -165,28 +165,28 @@ subgraph FilterTaxonList
   direction TB
   FetchGoaTTargetListTaxDB[FetchGoaTTargetList] --> FilterTargetLists
   AvailableTaxonListTaxDB@{shape: doc, label: "AvailableTaxonList\n_.tsv_"} --> FilterTargetLists
-  AvailableAccessionListTaxDB@{shape: doc, label: "AvailableAccessionList\n_.tsv_"} --> FilterTargetLists
+  AvailableAssemblyListTaxDB@{shape: doc, label: "AvailableAssemblyList\n_.tsv_"} --> FilterTargetLists
   FilterTargetLists --> FilteredTaxonList@{shape: doc, label: "FilteredTaxonList\n_.tsv_"}
-  FilterTargetLists --> FilteredAccessionList@{shape: doc, label: "FilteredAccessionList\n_.tsv_"}
+  FilterTargetLists --> FilteredAssemblyList@{shape: doc, label: "FilteredAssemblyList\n_.tsv_"}
 end
 
 subgraph CreateDatabase
   direction TB
   NCBITaxdumpCreateDB@{shape: docs, label: "NCBITaxdump\n_.dmp_"} --> FilterNCBITaxdump
   FilteredTaxonListCreateDB@{shape: doc, label: "FilteredTaxonList\n_.tsv_"} --> FilterNCBITaxdump
-  FilteredAccessionListCreateDB@{shape: doc, label: "FilteredAccessionList\n_.tsv_"} --> ForEachTargetAccession
+  FilteredAssemblyListCreateDB@{shape: doc, label: "FilteredAssemblyList\n_.tsv_"} --> ForEachTargetAssembly
   FilterNCBITaxdump --> FilteredTaxdump@{shape: docs, label: "FilteredTaxdump\n_.dmp_"}
   FilteredTaxdump --> GenomeHubsInitCreateDB[GenomeHubsInit]
 
   GenomeHubsInitCreateDB --> GenomeHubsImportCreateDB[GenomeHubsImport]
   GHubsFilePairCreateDB@{shape: docs, label: "GHubsFilePairs\n_.yaml_\n_.tsv_"} --> GenomeHubsImportCreateDB
-  GenomeHubsImportCreateDB --> ForEachTargetAccession
-  subgraph ForEachTargetAccession
+  GenomeHubsImportCreateDB --> ForEachTargetAssembly
+  subgraph ForEachTargetAssembly
   ESSnapshotCreateDB@{shape: db, label: "ESSnapshot\n_features_"}
   ESSnapshotCreateDB --> LoadSnapshot
   LoadSnapshot --> ReIndexFeatures
   end
-  ForEachTargetAccession --> GenomeHubsFill
+  ForEachTargetAssembly --> GenomeHubsFill
   GenomeHubsFill --> ESSnapshotFill@{shape: db, label: "ESSnapshot\n_fill_"}
 end
 
@@ -202,22 +202,30 @@ end
 end
 
 FetchResources --> ForEachTaxDB
-FetchResources --> ForEachAccession
-ForEachAccession --> ForEachTaxDB
+FetchResources --> ForEachAssembly
+ForEachAssembly --> ForEachTaxDB
 FetchAssemblyMetadata --> ForEachTaxDB
 CreateDatabase --> TransferIndexes
 ```
 
 ### FetchResources
 
+```
+FLOWS_PATH=./flows
+WORK_DIR=./example
+```
+
 #### FetchGoatTargetList
 
 Generate `taxon_list.tsv` with:
 ```
-SKIP_PREFECT=true python3 src/data/flows/lib/fetch_goat_target_list.py -q "query:tax_rank(species) AND assembly_level>=chromosome&fields:none"
+SKIP_PREFECT=true python3 $FLOWS_PATH/lib/fetch_genomehubs_target_list.py -q "query:tax_rank(species) AND assembly_level>=chromosome&fields:none" -w $WORK_DIR
 ```
 
 Generate `assembly_list.tsv` with:
 ```
-SKIP_PREFECT=true python3 src/data/flows/lib/fetch_goat_target_list.py -q "query:tax_rank(species) AND assembly_level=chromosome AND refseq_category&fields:none" -x assembly
+SKIP_PREFECT=true python3 $FLOWS_PATH/lib/fetch_genomehubs_target_list.py -q "query:tax_rank(species) AND assembly_level=chromosome AND refseq_category&fields:none" -x assembly -w $WORK_DIR
 ```
+
+### ForEachAssembly
+

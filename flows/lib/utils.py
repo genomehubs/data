@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import contextlib
+from argparse import Action
 from typing import Optional
 
 from genomehubs import utils as gh_utils
@@ -476,3 +477,53 @@ def update_organelle_info(data: dict, row: dict) -> None:
                 }
             }
         )
+
+
+def enum_action(enum_class):
+    """Creates an argparse action for handling enum values.
+
+    Creates a custom argparse action that allows command-line arguments to be
+    interpreted as members of a given enumeration class. The action converts
+    case-insensitive input values to the corresponding enum members.
+
+    Args:
+        enum_class (type): The enumeration class.
+
+    Returns:
+        EnumAction: The custom argparse action.
+    """
+
+    class EnumAction(Action):
+        """
+        Custom argparse action for handling enum values.
+        """
+
+        def __init__(self, *args, **kwargs):
+            """
+            Initialize the EnumAction.
+
+            Args:
+                *args: Variable length argument list.
+                **kwargs: Arbitrary keyword arguments.
+            """
+            table = {member.name.casefold(): member for member in enum_class}
+            super().__init__(
+                *args,
+                choices=table,
+                **kwargs,
+            )
+            self.table = table
+
+        def __call__(self, parser, namespace, values, option_string=None):
+            """
+            Set the corresponding enum member in the namespace.
+
+            Args:
+                parser: The argparse parser.
+                namespace: The argparse namespace.
+                values: The value provided.
+                option_string: The option string.
+            """
+            setattr(namespace, self.dest, self.table[values])
+
+    return EnumAction

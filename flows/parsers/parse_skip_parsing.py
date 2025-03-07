@@ -10,7 +10,7 @@ if __name__ == "__main__" and __package__ is None:
     __package__ = "flows"
 
 from flows.lib.conditional_import import flow, task  # noqa: E402
-from flows.lib.tasks import get_filenames  # noqa: E402
+from flows.lib.shared_tasks import get_filenames  # noqa: E402
 from flows.lib.utils import Config, Parser, load_config  # noqa: E402
 from flows.parsers.args import parse_args  # noqa: E402
 
@@ -60,5 +60,5 @@ def plugin():
 
 if __name__ == "__main__":
     """Run the flow."""
-    args = parse_args()
+    args = parse_args("Skip parsing.")
     parse_skip_parsing(**vars(args))
