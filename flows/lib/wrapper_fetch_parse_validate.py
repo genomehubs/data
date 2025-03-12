@@ -87,7 +87,11 @@ if __name__ == "__main__":
     """Run the flow."""
     parser = {
         "flags": ["-p", "--parser"],
-        "keys": {"help": "Parser to use.", "action": enum_action(Parser), "type": str},
+        "keys": {
+            "help": "Parser to use.",
+            "action": enum_action(PARSERS.ParserEnum),
+            "type": str,
+        },
     }
     args = parse_args(
         [

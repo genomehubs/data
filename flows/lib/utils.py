@@ -4,6 +4,8 @@ import contextlib
 from argparse import Action
 from typing import Optional
 
+import boto3
+import requests
 from genomehubs import utils as gh_utils
 
 
@@ -512,6 +514,7 @@ def enum_action(enum_class):
                 choices=table,
                 **kwargs,
             )
+            print(enum_class)
             self.table = table
 
         def __call__(self, parser, namespace, values, option_string=None):
@@ -527,3 +530,59 @@ def enum_action(enum_class):
             setattr(namespace, self.dest, self.table[values])
 
     return EnumAction
+
+
+def find_http_file(http_path: str, filename: str) -> str:
+    """
+    Find files for the record ID.
+
+    Args:
+        http_path (str): Path to the HTTP directory.
+        filename (str): Name of the file to find.
+
+    Returns:
+        str: Path to the file.
+    """
+    response = requests.get(f"{http_path}/{filename}")
+    return f"{http_path}/{filename}" if response.status_code == 200 else None
+
+
+def get_genomehubs_attribute_value(result: dict, attribute: str) -> str:
+    """
+    Get the value of an attribute from the result.
+
+    Args:
+        result (dict): Result.
+        attribute (str): Attribute to get the value of.
+
+    Returns:
+        str: Value of the attribute.
+    """
+    return (
+        result.get("result", {})
+        .get("fields", {})
+        .get("odb10_lineage", {})
+        .get("value", None)
+    )
+
+
+def find_s3_file(s3_path: list, filename: str) -> str:
+    """
+    Find files for the record ID.
+
+    Args:
+        s3_path (list): List of paths to the S3 buckets.
+        filename (str): Name of the file to find.
+
+    Returns:
+        str: Path to the file.
+    """
+    for s3_bucket in s3_path:
+        s3 = boto3.client("s3")
+        response = s3.list_objects_v2(
+            Bucket=s3_bucket,
+            Prefix=filename,
+        )
+        if "Contents" in response:
+            return f"s3://{s3_bucket}/{response['Contents'][0]['Key']}"
+    return None

@@ -34,11 +34,35 @@ APPEND = {
     },
 }
 
+ASSEMBLY_ID = {
+    "flags": ["--assembly_id"],
+    "keys": {
+        "help": "Assembly ID.",
+        "type": str,
+    },
+}
+
 DRY_RUN = {
     "flags": ["-d", "--dry_run"],
     "keys": {
         "help": "Flag to perform a dry run without updating S3/git files.",
         "action": "store_true",
+    },
+}
+
+HTTP_PATH = {
+    "flags": ["-u", "--http_path"],
+    "keys": {
+        "help": "Path to the HTTP directory.",
+        "type": str,
+    },
+}
+
+ID_COLUMN = {
+    "flags": ["--id_column"],
+    "keys": {
+        "help": "Name of the column containing the record IDs.",
+        "type": str,
     },
 }
 
@@ -99,6 +123,14 @@ S3_PATH = {
 TAXDUMP_PATH = {
     "flags": ["-t", "--taxdump_path"],
     "keys": {"help": "Path to an NCBI format taxdump.", "type": str},
+}
+
+TAXON_ID = {
+    "flags": ["--taxon_id"],
+    "keys": {
+        "help": "Taxon ID.",
+        "type": str,
+    },
 }
 
 WORK_DIR = {

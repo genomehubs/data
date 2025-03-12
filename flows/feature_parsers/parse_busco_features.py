@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+
+# sourcery skip: avoid-builtin-shadow
+import os
+import sys
+from glob import glob
+from os.path import abspath, dirname
+
+# from genomehubs import utils as gh_utils
+
+if __name__ == "__main__" and __package__ is None:
+    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
+    __package__ = "flows"
+
+# from flows.lib import utils  # noqa: E402
+from flows.lib.conditional_import import flow  # noqa: E402
+from flows.lib.utils import Parser  # noqa: E402
+from flows.parsers.args import parse_args  # noqa: E402
+
+
+@flow(log_prints=True)
+def parse_busco_features(input_path: str, yaml_path: str):
+    """
+    Parse a BUSCO full_table TSV file.
+
+    Args:
+        input_path (str): Path to the BUSCO full_table TSV file.
+        yaml_path (str): Path to the YAML configuration file.
+    """
+    print(input_path)
+    print(yaml_path)
+    # config = utils.load_config(
+    #     config_file=yaml_path,
+    #     feature_file=feature_file,
+    #     load_previous=append,
+    # )
+    # if feature_file is not None:
+    #     set_up_feature_file(config)
+    # biosamples = {}
+    # parsed = {}
+    # previous_report = {} if append else None
+    # process_assembly_reports(input_path, config, biosamples, parsed, previous_report)
+    # set_representative_assemblies(parsed, biosamples)
+    # write_to_tsv(parsed, config)
+
+
+def parse_busco_features_wrapper(working_yaml: str, work_dir: str) -> None:
+    """
+    Wrapper function to parse BUSCO features from a full_table TSV file.
+
+    Args:
+        working_yaml (str): Path to the working YAML file.
+    """
+    # use glob to find the jsonl file in the working directory
+    glob_path = os.path.join(work_dir, "*.jsonl")
+    paths = glob(glob_path)
+    # raise error if no jsonl file is found
+    if not paths:
+        raise FileNotFoundError(f"No jsonl file found in {work_dir}")
+    # rais error if more than one jsonl file is found
+    if len(paths) > 1:
+        raise ValueError(f"More than one jsonl file found in {work_dir}")
+    parse_busco_features(input_path=paths[0], yaml_path=working_yaml)
+
+
+def plugin():
+    """Register the flow."""
+    return Parser(
+        name="BUSCO",
+        func=parse_busco_features_wrapper,
+        description="Parse BUSCO features from a full_table TSV file.",
+    )
+
+
+if __name__ == "__main__":
+    """Run the flow."""
+    args = parse_args("Parse BUSCO features from a full_table TSV file.")
+    parse_busco_features(**vars(args))
