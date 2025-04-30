@@ -3,11 +3,25 @@
 import hashlib
 import os
 import subprocess
+import sys
+from os.path import abspath, dirname
 
 import boto3
 from botocore.exceptions import ClientError
-from conditional_import import emit_event, flow, task
-from shared_args import OUTPUT_PATH, ROOT_TAXID, S3_PATH, default, parse_args, required
+
+if __name__ == "__main__" and __package__ is None:
+    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
+    __package__ = "flows"
+
+from flows.lib.conditional_import import emit_event, flow, task
+from flows.lib.shared_args import (
+    OUTPUT_PATH,
+    ROOT_TAXID,
+    S3_PATH,
+    default,
+    parse_args,
+    required,
+)
 
 
 @task(retries=2, retry_delay_seconds=2, log_prints=True)
