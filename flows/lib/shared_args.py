@@ -110,6 +110,15 @@ MIN_ASSIGNED = {
     },
 }
 
+MIN_RECORDS = {
+    "flags": ["--min_records"],
+    "keys": {
+        "help": "Minimum expected number of records.",
+        "default": 0,
+        "type": int,
+    },
+}
+
 OUTPUT_PATH = {
     "flags": ["-o", "--output_path"],
     "keys": {"help": "Path to the output file.", "type": str},
