@@ -73,7 +73,10 @@ def fetch_ncbi_datasets_summary(
         ]
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode != 0:
-            if "V2reportsRankType" in result.stderr:
+            if (
+                "V2reportsRankType" in result.stderr
+                or "no genome data" in result.stderr
+            ):
                 # Handle the specific error message
                 print(
                     f"Warning: {result.stderr.strip()}. "
