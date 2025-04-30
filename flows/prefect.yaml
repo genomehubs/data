@@ -10,8 +10,8 @@ push: null
 pull:
   - prefect.deployments.steps.git_clone:
       id: clone-step
-      repository: https://github.com/genomehubs/goat-data.git
-      branch: feature/assembly-pipelines
+      repository: https://github.com/genomehubs/data.git
+      branch: main
 
 definitions:
   work_pools:
