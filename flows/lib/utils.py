@@ -2,6 +2,7 @@
 
 import contextlib
 from argparse import Action
+from datetime import datetime
 from typing import Optional
 
 import boto3
@@ -586,3 +587,34 @@ def find_s3_file(s3_path: list, filename: str) -> str:
         if "Contents" in response:
             return f"s3://{s3_bucket}/{response['Contents'][0]['Key']}"
     return None
+
+
+def set_index_name(
+    index_type: str,
+    hub_name: str,
+    taxonomy_name: str = "ncbi",
+    date: str = None,
+    separator: str = "--",
+) -> str:
+    """
+    Set the index name.
+
+    Args:
+        index_type (str): Type of index.
+        hub_name (str): Name of the GenomeHubs instance.
+        taxonomy_name (str, optional): Name of the taxonomy. Defaults to "ncbi".
+        date (str, optional): Date of the index. Defaults to None.
+        separator (str, optional): Separator for the index name. Defaults to "--".
+
+    Returns:
+        str: Name of the index.
+    """
+    if date is None:
+        # set todays date in the format YYYY.MM.DD
+        date = datetime.now().strftime("%Y.%m.%d")
+    else:
+        # change the date format to YYYY.MM.DD
+        date = date.replace("-", ".")
+    return (
+        f"{hub_name}{separator}{taxonomy_name}{separator}{index_type}{separator}{date}"
+    )

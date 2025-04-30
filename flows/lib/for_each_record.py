@@ -7,6 +7,7 @@ from shared_args import (
     ID_COLUMN,
     INPUT_PATH,
     S3_PATH,
+    SSH_PATH,
     WORK_DIR,
     multi,
     parse_args,
@@ -42,7 +43,13 @@ def for_each_record(
 if __name__ == "__main__":
     """Run the flow."""
     args = parse_args(
-        [required(INPUT_PATH), required(ID_COLUMN), WORK_DIR, multi(S3_PATH)],
+        [
+            required(INPUT_PATH),
+            required(ID_COLUMN),
+            WORK_DIR,
+            multi(S3_PATH),
+            # multi(SSH_PATH),
+        ],
         "Run a flow for each record in an input file.",
     )
 

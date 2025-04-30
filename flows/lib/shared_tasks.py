@@ -32,4 +32,7 @@ def get_filenames(config: Config, s3_path: str, work_dir: str) -> tuple:
     # Append the working directory to the local filename
     local_file = os.path.join(work_dir, local_file)
 
+    # make workdir if not exists
+    os.makedirs(work_dir, exist_ok=True)
+
     return (local_file, remote_file)

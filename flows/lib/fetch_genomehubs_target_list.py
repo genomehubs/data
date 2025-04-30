@@ -123,10 +123,4 @@ if __name__ == "__main__":
         "Fetch a target list from a GenomeHubs site.",
     )
 
-    fetch_genomehubs_target_list(
-        root_taxid=args.root_taxid,
-        work_dir=args.work_dir,
-        index_type=args.index_type,
-        api_url=args.api_url,
-        query_options=args.query_options,
-    )
+    fetch_genomehubs_target_list(**vars(args))

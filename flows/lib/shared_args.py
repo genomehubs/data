@@ -42,6 +42,14 @@ ASSEMBLY_ID = {
     },
 }
 
+DATE = {
+    "flags": ["--date"],
+    "keys": {
+        "help": "Date of the index. Format: YYYY-MM-DD.",
+        "type": str,
+    },
+}
+
 DRY_RUN = {
     "flags": ["-d", "--dry_run"],
     "keys": {
@@ -54,6 +62,14 @@ HTTP_PATH = {
     "flags": ["-u", "--http_path"],
     "keys": {
         "help": "Path to the HTTP directory.",
+        "type": str,
+    },
+}
+
+HUB_NAME = {
+    "flags": ["--hub_name"],
+    "keys": {
+        "help": "Name of the GenomeHubs instance.",
         "type": str,
     },
 }
@@ -120,6 +136,14 @@ S3_PATH = {
     },
 }
 
+SSH_PATH = {
+    "flags": ["--ssh_path"],
+    "keys": {
+        "help": "Path to remote file/directory via ssh.",
+        "type": str,
+    },
+}
+
 TAXDUMP_PATH = {
     "flags": ["-t", "--taxdump_path"],
     "keys": {"help": "Path to an NCBI format taxdump.", "type": str},
@@ -129,6 +153,15 @@ TAXON_ID = {
     "flags": ["--taxon_id"],
     "keys": {
         "help": "Taxon ID.",
+        "type": str,
+    },
+}
+
+TAXONOMY_NAME = {
+    "flags": ["--taxonomy_name"],
+    "keys": {
+        "default": "ncbi",
+        "help": "Name of the taxonomy.",
         "type": str,
     },
 }

@@ -154,8 +154,4 @@ if __name__ == "__main__":
         "Fetch previous YAML/TSV files.",
     )
 
-    fetch_previous_file_pair(
-        yaml_path=args.yaml_path,
-        s3_path=args.s3_path,
-        work_dir=args.work_dir,
-    )
+    fetch_previous_file_pair(**vars(args))

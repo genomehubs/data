@@ -20,8 +20,8 @@ def fetch_ncbi_datasets_summary(
     Fetch NCBI datasets summary for a given root taxID.
 
     Args:
-        file_path (str): Path to the output file.
         root_taxid (str): Root taxonomic ID for fetching datasets.
+        file_path (str): Path to the output file.
         min_lines (int): Minimum number of lines in the output file.
 
     Returns:
