@@ -155,7 +155,7 @@ def compare_datasets_summary(local_path: str, s3_path: str) -> bool:
 
 @flow()
 def update_ncbi_datasets(root_taxid: str, output_path: str, s3_path: str) -> None:
-    line_count = fetch_ncbi_datasets_summary(root_taxid, output_path)
+    line_count = fetch_ncbi_datasets_summary(root_taxid, file_path=output_path)
     if s3_path:
         status = compare_datasets_summary(output_path, s3_path)
         emit_event(
