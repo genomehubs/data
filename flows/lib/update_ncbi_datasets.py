@@ -28,38 +28,76 @@ def fetch_ncbi_datasets_summary(
         int: Number of lines written to the output file.
     """
 
-    # Fetch datasets summary for the root taxID
-    command = [
-        "datasets",
-        "summary",
-        "genome",
-        "taxon",
-        root_taxid,
-        "--as-json-lines",
-    ]
-    result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode != 0:
-        # Raise an error if the command fails
-        raise RuntimeError(f"Error fetching datasets summary: {result.stderr}")
+    # Check if the file already exists and truncate it
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    # open the file for writing and truncate it
+    with open(file_path, "w") as f:
+        f.truncate(0)
 
-    try:
-        print(f"Writing datasets summary to file: {file_path}")
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        # Write to the file and count lines while writing
-        line_count = 0
-        with open(file_path, "w") as f:
-            for line in result.stdout.splitlines():
-                f.write(line + "\n")
-                line_count += 1
+    line_count = 0
 
-        # Check if the file has at least 10000 lines
-        if line_count < min_lines:
-            raise RuntimeError(
-                f"File {file_path} has less than {min_lines} lines: {line_count}"
-            )
-    except Exception as e:
-        # Raise an error if writing to the file fails
-        raise RuntimeError(f"Error writing datasets summary to file: {e}") from e
+    taxids = [root_taxid]
+    if root_taxid == "2759":
+        taxids = [
+            "2763",
+            "33090",
+            "38254",
+            "3027",
+            "2795258",
+            "3004206",
+            "2683617",
+            "2686027",
+            "2698737",
+            "2611341",
+            "1401294",
+            "61964",
+            "554915",
+            "2611352",
+            "2608240",
+            "2489521",
+            "2598132",
+            "2608109",
+            "33154",
+            "554296",
+            "42452",
+        ]
+    for taxid in taxids:
+        # datasets summary for the root taxID
+        command = [
+            "datasets",
+            "summary",
+            "genome",
+            "taxon",
+            taxid,
+            "--as-json-lines",
+        ]
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            if "V2reportsRankType" in result.stderr:
+                # Handle the specific error message
+                print(
+                    f"Warning: {result.stderr.strip()}. "
+                    f"Skipping taxid {taxid} and continuing."
+                )
+                continue
+            # Raise an error if the command fails
+            raise RuntimeError(f"Error fetching datasets summary: {result.stderr}")
+
+        try:
+            print(f"Writing datasets summary for {taxid} to file: {file_path}")
+            with open(file_path, "a") as f:
+                for line in result.stdout.splitlines():
+                    f.write(line + "\n")
+                    line_count += 1
+        except Exception as e:
+            # Raise an error if writing to the file fails
+            raise RuntimeError(f"Error writing datasets summary to file: {e}") from e
+
+    # Check if the file has at least min_lines lines
+    if line_count < min_lines:
+        raise RuntimeError(
+            f"File {file_path} has less than {min_lines} lines: {line_count}"
+        )
 
     # Return the number of lines written to the file
     return line_count
