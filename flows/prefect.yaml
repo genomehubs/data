@@ -1,52 +1,72 @@
-# generic metadata
+# Generic metadata
 prefect-version: 3.1.12
 name: goat-data-import
 
-# preparation steps
+# Preparation steps (not currently used)
 build: null
 push: null
 
-# runtime steps
+# Runtime steps
 pull:
   - prefect.deployments.steps.git_clone:
+      # Pull the genomehubs/goat-data repository to get the latest yaml files
       id: clone-goat-data
       repository: https://github.com/genomehubs/goat-data.git
       branch: main
   - prefect.deployments.steps.git_clone:
+      # Pull the genomehubs/data repository to get the latest flows
       id: clone-data
       repository: https://github.com/genomehubs/data.git
       branch: main
 
 definitions:
   work_pools:
-    goat_data_work_pool: &goat_data_work_pool
+    goat_data_work_pool:
+      &goat_data_work_pool # Work pool for the goat-data import flows
       name: goat-data
       work_queue_name: default
   schedules:
-    daily: &daily
+    daily: &daily # Runs Monday to Saturday at 00:05 UTC
       cron: "5 0 * * 1-6"
-    weekly: &weekly
+    weekly: &weekly # Runs every Monday at 00:05 UTC
       cron: "5 0 * * 1"
 
 deployments:
   - name: update-ncbi-datasets
+    # This flow updates the NCBI datasets JSONL file
     entrypoint: flows/updaters/update_ncbi_datasets.py:update_ncbi_datasets
     parameters:
+      # The root taxon Id to use. 2759 is the taxon Id for Eukaryota
       root_taxid: "2759"
+      # Local path to save the NCBI datasets JSONL file
       output_path: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}/ncbi_datasets_eukaryota.jsonl"
+      # The S3 path to save the NCBI datasets JSONL file
       s3_path: s3://goat/resources/assembly-data/ncbi_datasets_eukaryota.jsonl
     schedules:
       - *daily
     work_pool: *goat_data_work_pool
 
   - name: fetch-parse-validate-ncbi-datasets
+    # This flow fetches the previous yaml/tsv pair, then parses and validates the NCBI datasets JSONL file
+    # The flow is triggered by the update.ncbi.datasets.finished event
     entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
     parameters:
+      # Parsers are defined in the flows/parsers directory
+      # The ParserEnum.NCBI_ASSEMBLIES is defined in the flows/parsers/ncbi_assemblies.py file
       parser: "ParserEnum.NCBI_ASSEMBLIES"
+      # The file at yaml_path contains configuration used to parse the NCBI datasets JSONL file
+      # A relative path is used to refer to the goat-data repository
       yaml_path: "../goat-data-main/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml"
+      # This is the S3 path where the previous parsed data can be found
       s3_path: "s3://goat/sources/assembly-data/"
+      # The local path where the YAML/TSV file pair will be saved
       work_dir: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}"
+      # A flag to indicate if the flow should append to the existing TSV file
+      # This step pulls sequence reports for each chromosomal assembly so is very slow to run in full
       append: true
+      # A flag to indicate if the flow should run in dry run mode
+      # Currently set to true during development
+      # This will not upload the TSV file to S3
       dry_run: true
     triggers:
       - enabled: true
