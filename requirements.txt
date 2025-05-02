@@ -1,2 +1,1 @@
-boto3
-genomehubs
+genomehubs>=2.10.14
