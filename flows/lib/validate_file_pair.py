@@ -17,6 +17,7 @@ from shared_args import (
     TAXDUMP_PATH,
     WORK_DIR,
     YAML_PATH,
+    default,
     parse_args,
     required,
 )
@@ -177,7 +178,7 @@ if __name__ == "__main__":
         [
             required(YAML_PATH),
             WORK_DIR,
-            required(S3_PATH),
+            default(S3_PATH, None),
             TAXDUMP_PATH,
             MIN_VALID,
             MIN_ASSIGNED,
