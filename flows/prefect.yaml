@@ -9,9 +9,14 @@ push: null
 # runtime steps
 pull:
   - prefect.deployments.steps.git_clone:
-      id: clone-step
+      id: clone-data
       repository: https://github.com/genomehubs/data.git
       branch: main
+  - prefect.deployments.steps.git_clone:
+      id: clone-goat-data
+      repository: https://github.com/genomehubs/goat-data.git
+      branch: main
+      destination: /tmp/goat-data
 
 definitions:
   work_pools:
@@ -39,7 +44,7 @@ deployments:
     entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
     parameters:
       parser: "ParserEnum.NCBI_ASSEMBLIES"
-      yaml_path: "/home/ubuntu/goat-data/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml"
+      yaml_path: "/tmp/goat-data/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml"
       s3_path: "s3://goat/sources/assembly-data/"
       work_dir: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}"
       append: true
@@ -53,7 +58,7 @@ deployments:
           - update.ncbi.datasets.finished
         parameters:
           parser: "ParserEnum.NCBI_ASSEMBLIES"
-          yaml_path: "/home/ubuntu/goat-data/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml"
+          yaml_path: "/tmp/goat-data/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml"
           s3_path: "s3://goat/sources/assembly-data/"
           work_dir: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}"
           append: true
