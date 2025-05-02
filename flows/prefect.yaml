@@ -43,7 +43,7 @@ deployments:
     entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
     parameters:
       parser: "ParserEnum.NCBI_ASSEMBLIES"
-      yaml_path: "../goat-data/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml"
+      yaml_path: "../goat-data-main/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml"
       s3_path: "s3://goat/sources/assembly-data/"
       work_dir: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}"
       append: true
@@ -57,7 +57,7 @@ deployments:
           - update.ncbi.datasets.finished
         parameters:
           parser: "ParserEnum.NCBI_ASSEMBLIES"
-          yaml_path: "../goat-data/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml"
+          yaml_path: "../goat-data-main/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml"
           s3_path: "s3://goat/sources/assembly-data/"
           work_dir: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}"
           append: true
