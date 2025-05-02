@@ -9,12 +9,12 @@ push: null
 # runtime steps
 pull:
   - prefect.deployments.steps.git_clone:
-      id: clone-data
-      repository: https://github.com/genomehubs/data.git
-      branch: main
-  - prefect.deployments.steps.git_clone:
       id: clone-goat-data
       repository: https://github.com/genomehubs/goat-data.git
+      branch: main
+  - prefect.deployments.steps.git_clone:
+      id: clone-data
+      repository: https://github.com/genomehubs/data.git
       branch: main
 
 definitions:
