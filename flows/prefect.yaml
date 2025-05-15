@@ -1,5 +1,5 @@
 # Generic metadata
-prefect-version: 3.1.12
+prefect-version: 3.2.0
 name: goat-data-import
 
 # Preparation steps (not currently used)
@@ -18,12 +18,16 @@ pull:
       id: clone-data
       repository: https://github.com/genomehubs/data.git
       branch: main
+  - prefect.deployments.steps.pip_install_requirements:
+      directory: '{{ clone-data.directory }}'
+      requirements_file: requirements.txt
+      stream_output: true
 
 definitions:
   work_pools:
     goat_data_work_pool:
       &goat_data_work_pool # Work pool for the goat-data import flows
-      name: goat-data
+      name: k8-worker
       work_queue_name: default
   schedules:
     daily: &daily # Runs Monday to Saturday at 00:05 UTC
