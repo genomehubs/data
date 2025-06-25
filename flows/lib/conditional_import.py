@@ -25,8 +25,7 @@ if skip_prefect():
     def emit_event(*_, **__):
         return lambda x: x
 
-    def run_count(*_, **__):
-        return lambda x: x
+    run_count = 1
 
     NO_CACHE = None
 
