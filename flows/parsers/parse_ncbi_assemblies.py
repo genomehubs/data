@@ -181,7 +181,6 @@ def fetch_and_parse_sequence_report(data: dict):
                     chromosomes.append(seq)
     except subprocess.TimeoutExpired:
         print(f"ERROR: Timeout fetching sequence report for {accession}")
-        print(chromosomes)
         return
     utils.add_organelle_entries(data, organelles)
     utils.check_ebp_criteria(data, span, chromosomes, assigned_span)
@@ -333,16 +332,22 @@ def process_assembly_reports(
         None
     """
     for report in parse_assembly_report(jsonl_path=jsonl_path):
-        processed_report = process_assembly_report(
-            report, previous_report, config, parsed
-        )
-        if use_previous_report(processed_report, parsed, config):
+        try:
+            processed_report = process_assembly_report(
+                report, previous_report, config, parsed
+            )
+            if use_previous_report(processed_report, parsed, config):
+                continue
+            fetch_and_parse_sequence_report(processed_report)
+            append_features(processed_report, config)
+            add_report_to_parsed_reports(parsed, processed_report, config, biosamples)
+            if previous_report is not None:
+                previous_report = processed_report
+        except Exception as e:
+            print(
+                f"Error processing report for {report.get('accession', 'unknown')}: {e}"
+            )
             continue
-        fetch_and_parse_sequence_report(processed_report)
-        append_features(processed_report, config)
-        add_report_to_parsed_reports(parsed, processed_report, config, biosamples)
-        if previous_report is not None:
-            previous_report = processed_report
 
 
 @flow(log_prints=True)

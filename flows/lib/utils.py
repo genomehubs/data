@@ -2,8 +2,10 @@
 
 import contextlib
 from argparse import Action
+from csv import DictReader, Sniffer
 from datetime import datetime
-from typing import Optional
+from io import StringIO
+from typing import Dict, List, Optional
 
 import boto3
 import requests
@@ -250,21 +252,26 @@ def set_additional_organelle_values(
         organelle_name (str): The name of the organelle.
     """
     if is_assembled_molecule(seq):
-        organelle["genbankAssmAccession"] = seq[0]["genbank_accession"]
-        organelle["totalSequenceLength"] = seq[0]["length"]
-        organelle["gcPercent"] = seq[0]["gc_percent"]
-        data["processedOrganelleInfo"][organelle_name]["assemblySpan"] = organelle[
-            "totalSequenceLength"
-        ]
-        data["processedOrganelleInfo"][organelle_name]["gcPercent"] = organelle[
-            "gcPercent"
-        ]
-        data["processedOrganelleInfo"][organelle_name]["accession"] = seq[0][
-            "genbank_accession"
-        ]
+        if "genbank_accession" in seq[0]:
+            organelle["genbankAssmAccession"] = seq[0]["genbank_accession"]
+            organelle["totalSequenceLength"] = seq[0]["length"]
+            organelle["gcPercent"] = seq[0]["gc_percent"]
+            data["processedOrganelleInfo"][organelle_name]["assemblySpan"] = organelle[
+                "totalSequenceLength"
+            ]
+            data["processedOrganelleInfo"][organelle_name]["gcPercent"] = organelle[
+                "gcPercent"
+            ]
+            data["processedOrganelleInfo"][organelle_name]["accession"] = seq[0][
+                "genbank_accession"
+            ]
     else:
         data["processedOrganelleInfo"][organelle_name]["scaffolds"] = ";".join(
-            [entry["genbank_accession"] for entry in seq]
+            [
+                entry["genbank_accession"]
+                for entry in seq
+                if "genbank_accession" in entry
+            ]
         )
 
 
@@ -618,3 +625,19 @@ def set_index_name(
     return (
         f"{hub_name}{separator}{taxonomy_name}{separator}{index_type}{separator}{date}"
     )
+
+
+def parse_tsv(text: str) -> List[Dict[str, str]]:
+    """
+    Parse a TSV string into a list of dictionaries.
+
+    Args:
+        text (str): The TSV string to parse.
+
+    Returns:
+        List[Dict[str, str]]: A list of dictionaries representing the rows.
+    """
+    sniffer = Sniffer()
+    dialect = sniffer.sniff(text)
+    reader = DictReader(StringIO(text), dialect=dialect)
+    return [row for row in reader]
