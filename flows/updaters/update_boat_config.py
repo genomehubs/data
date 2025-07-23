@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+# sourcery skip: avoid-builtin-shadow
 import hashlib
 import os
 import subprocess
@@ -60,7 +61,7 @@ def taxon_id_to_ssh_path(ssh_host, taxon_id, assembly_name):
         return
     # Use the first lustre path
     lustre_path = lustre_path[0].strip()
-    return f"{lustre_path}/analysis/{assembly_name}"
+    return f"{lustre_path}/analysis/{assembly_name}/busco"
 
 
 def lookup_buscos(ssh_host, file_path):
@@ -81,30 +82,6 @@ def lookup_buscos(ssh_host, file_path):
             for line in result.stdout.splitlines()
             if "/busco" in line
         ]
-    # else:
-    #     command = [
-    #         "ssh",
-    #         ssh_host,
-    #         "bash",
-    #         "-c",
-    #         (f"'ls {file_path}/*_odb*.tar'"),
-    #     ]
-    #     result = subprocess.run(command, capture_output=True, text=True)
-    #     if result.returncode != 0:
-    #         return []
-    #     busco_dirs = [
-    #         next(
-    #             (
-    #                 part
-    #                 for part in os.path.basename(os.path.normpath(line)).split(".")
-    #                 if "_odb" in part
-    #             ),
-    #             None,
-    #         )
-    #         for line in result.stdout.splitlines()
-    #         if "_odb" in line and line.endswith(".tar")
-    #     ]
-    #     busco_dirs = [b for b in busco_dirs if b]
     return busco_dirs
 
 
@@ -173,7 +150,7 @@ def prepare_output_files(file_path, visited_file_path, append):
     else:
         # count the lines in the file
         with open(file_path, "r") as f:
-            for line in f:
+            for _ in f:
                 line_count += 1
         line_count = max(line_count - 1, 0)  # Exclude header line
 
@@ -182,7 +159,7 @@ def prepare_output_files(file_path, visited_file_path, append):
     if os.path.exists(visited_file_path):
         if append:
             with open(visited_file_path, "r") as f:
-                visited_assembly_ids = set(line.strip() for line in f)
+                visited_assembly_ids = {line.strip() for line in f}
         else:
             # truncate the file if not appending
             with open(visited_file_path, "w") as f:
@@ -216,11 +193,10 @@ def fetch_goat_results(root_taxid):
         )
 
     # Parse the TSV response
-    tsv_data = parse_tsv(response.text)
-    if not tsv_data:
+    if tsv_data := parse_tsv(response.text):
+        return tsv_data
+    else:
         raise RuntimeError("No data found in BoaT config info response")
-
-    return tsv_data
 
 
 @task(retries=2, retry_delay_seconds=2, log_prints=True)
@@ -249,7 +225,7 @@ def fetch_boat_config_info(
     tsv_data = fetch_goat_results(root_taxid)
 
     # Prepare output files and get visited assembly IDs
-    visited_file_path = os.path.splitext(file_path)[0] + ".visited"
+    visited_file_path = f"{os.path.splitext(file_path)[0]}.visited"
     visited_assembly_ids, line_count = prepare_output_files(
         file_path, visited_file_path, append
     )
@@ -281,8 +257,7 @@ def fetch_boat_config_info(
         lustre_path = taxon_id_to_ssh_path(ssh_host, taxon_id, assembly_name)
         busco_sets = []
         if lustre_path:
-            busco_path = f"{lustre_path}/busco"
-            busco_sets = lookup_buscos(ssh_host, busco_path)
+            busco_sets = lookup_buscos(ssh_host, lustre_path)
 
         if not busco_sets:
             lustre_path, busco_sets = assembly_id_to_busco_sets(alt_host, assembly_id)

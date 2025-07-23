@@ -65,8 +65,7 @@ deployments:
       # This step pulls sequence reports for each chromosomal assembly so is very slow to run in full
       append: true
       # A flag to indicate if the flow should run in dry run mode
-      # Currently set to true during development
-      # This will not upload the TSV file to S3
+      # If set to `true`, will not upload the TSV file to S3
       dry_run: true
     triggers:
       - enabled: true
