@@ -337,6 +337,35 @@ def process_assembly_reports(
                 report, previous_report, config, parsed
             )
             if use_previous_report(processed_report, parsed, config):
+                # Update previous_report with any new values from processed_report
+                # and store in parsed
+                accession = processed_report["processedAssemblyInfo"][
+                    "genbankAccession"
+                ]
+                previous = config.previous_parsed.get(accession, {})
+                # Merge previous and processed_report
+                merged_report = {**previous, **processed_report}
+                parsed[accession] = gh_utils.parse_report_values(
+                    config.parse_fns, merged_report
+                )
+                # Optionally update organelle info if needed
+                utils.update_organelle_info(merged_report, parsed[accession])
+                # Optionally update linked assemblies and biosamples
+                # as in add_report_to_parsed_reports
+                biosample = parsed[accession].get("biosampleAccession", [])
+                if biosample not in biosamples:
+                    biosamples[biosample] = []
+                if biosample:
+                    linked_assemblies = biosamples[biosample]
+                    for acc in linked_assemblies:
+                        if acc == accession:
+                            continue
+                        linked_row = parsed[acc]
+                        if accession not in linked_row["linkedAssembly"]:
+                            linked_row["linkedAssembly"].append(accession)
+                        if acc not in parsed[accession]["linkedAssembly"]:
+                            parsed[accession]["linkedAssembly"].append(acc)
+                    linked_assemblies.append(accession)
                 continue
             fetch_and_parse_sequence_report(processed_report)
             append_features(processed_report, config)

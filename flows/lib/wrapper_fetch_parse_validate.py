@@ -70,8 +70,13 @@ def fetch_parse_validate(
         yaml_path=yaml_path, s3_path=s3_path, work_dir=work_dir
     )
     if not header_status:
-        # If the headers do not match, set append == False to parse all records
-        append = False
+        # warn if the headers do not match
+        # previous version set append = False, but that is not necessary
+        # since we can update the records while keeping the sequence report derived data
+        print(
+            f"Warning: The headers in {yaml_path} do not match the previous file. "
+            "Check that this is intended."
+        )
     working_yaml = os.path.join(work_dir, os.path.basename(yaml_path))
     file_parser = PARSERS.parsers[parser.name]
     file_parser.func(working_yaml=working_yaml, work_dir=work_dir, append=append)
