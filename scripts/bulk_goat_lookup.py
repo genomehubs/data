@@ -59,18 +59,18 @@ def parse_results(taxon_name, data, ancestor, outfile, headers):
         if idx == 0:
             if not headers:
                 headers[:] = ["taxon_name"] + fields + ["match_count"]
-                print(headers, file=sys.stderr)
                 outfile.write("\t".join(headers) + "\n")
             continue
-        if ancestor and "ancestor" not in fields:
+        if ancestor and ancestor not in fields:
             continue
         results.append(fields)
     result_count = len(results)
-    for fields in results:
-        if result_count == 0:
-            row = [taxon_name] + ["None"] * (len(headers) - 2) + ["0"]
-        else:
-            row = [taxon_name] + fields + [str(result_count)]
+    rows = []
+    if result_count == 0:
+        rows = [[taxon_name] + ["None"] * (len(headers) - 2) + ["0"]]
+    else:
+        rows.extend([taxon_name] + fields + [str(result_count)] for fields in results)
+    for row in rows:
         outfile.write("\t".join(row) + "\n")
 
 
