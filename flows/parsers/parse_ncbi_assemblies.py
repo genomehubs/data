@@ -371,7 +371,11 @@ def process_assembly_reports(
                 previous_report = processed_report
         except Exception as e:
             print(
-                f"Error processing report for {report.get('accession', 'unknown')}: {e}"
+                (
+                    f"Error processing report for "
+                    f"{report.get('accession', 'unknown')}: "
+                    f"{e} (line {e.__traceback__.tb_lineno})"
+                )
             )
             continue
 
