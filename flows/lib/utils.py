@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 
 import contextlib
+import hashlib
+import os
 from argparse import Action
 from csv import DictReader, Sniffer
 from datetime import datetime
@@ -9,6 +11,8 @@ from typing import Dict, List, Optional
 
 import boto3
 import requests
+from botocore.exceptions import ClientError
+from dateutil import parser
 from genomehubs import utils as gh_utils
 
 
@@ -640,4 +644,130 @@ def parse_tsv(text: str) -> List[Dict[str, str]]:
     sniffer = Sniffer()
     dialect = sniffer.sniff(text)
     reader = DictReader(StringIO(text), dialect=dialect)
-    return [row for row in reader]
+    return list(reader)
+
+
+def last_modified_git_remote(http_path: str) -> Optional[str]:
+    """
+    Get the last modified date of a file in a git repository.
+
+    Args:
+        http_path (str): Path to the HTTP file.
+
+    Returns:
+        str: Last modified date of the file.
+    """
+    project_path = http_path.removeprefix("https://gitlab.com/")
+    project_path = project_path.removesuffix(".git")
+    parts = project_path.split("/")
+    project = "%2F".join(parts[:2])
+    ref = parts[4]
+    file = "%2F".join(parts[5:]).split("?")[0]
+    project_path = project_path.replace("/", "%2F")
+    api_url = (
+        f"https://gitlab.com/api/v4/projects/{project}/repository/commits"
+        f"?ref_name={ref}&path={file}&per_page=1"
+    )
+    response = requests.get(api_url)
+    if response.status_code == 200:
+        if commits := response.json():
+            if committed_date := commits[0].get("committed_date", None):
+                dt = parser.isoparse(committed_date)
+                return int(dt.timestamp())
+    else:
+        response = requests.head(http_path, allow_redirects=True)
+        if response.status_code == 200:
+            return response.headers.get("Last-Modified", None)
+    return None
+
+
+def last_modified_http(http_path: str) -> Optional[str]:
+    """
+    Get the last modified date of a file.
+
+    Args:
+        http_path (str): Path to the HTTP file.
+
+    Returns:
+        str: Last modified date of the file.
+    """
+    if "gitlab.com" in http_path:
+        return last_modified_git_remote(http_path)
+    response = requests.head(http_path, allow_redirects=True)
+    if response.status_code == 200:
+        if last_modified := response.headers.get("Last-Modified", None):
+            dt = parser.parse(last_modified)
+            return int(dt.timestamp())
+        return None
+    return None
+
+
+def last_modified_s3(s3_path: str) -> Optional[str]:
+    """
+    Get the last modified date of a file on S3.
+
+    Args:
+        s3_path (str): Path to the remote file on s3.
+
+    Returns:
+        str: Last modified date of the file.
+    """
+    s3 = boto3.client("s3")
+
+    # Extract bucket name and key from the S3 path
+    def parse_s3_path(s3_path):
+        bucket, key = s3_path.removeprefix("s3://").split("/", 1)
+        return bucket, key
+
+    bucket, key = parse_s3_path(s3_path)
+
+    # Return None if the remote file does not exist
+    try:
+        response = s3.head_object(Bucket=bucket, Key=key)
+        last_modified = response.get("LastModified", None)
+        return int(last_modified.timestamp()) if last_modified is not None else None
+    except ClientError:
+        return None
+
+
+def last_modified(local_path: str) -> Optional[str]:
+    """
+    Get the last modified date of a local file.
+
+    Args:
+        local_path (str): Path to the local file.
+
+    Returns:
+        str: Last modified date of the file.
+    """
+    if not os.path.exists(local_path):
+        return None
+    mtime = os.path.getmtime(local_path)
+    return int(mtime)
+
+
+def is_local_file_current_http(local_path: str, http_path: str) -> bool:
+    """
+    Compare the last modified date of a local file with a remote file on HTTP.
+
+    Args:
+        local_path (str): Path to the local file.
+        http_path (str): Path to the HTTP directory.
+
+    Returns:
+        bool: True if the local file is up-to-date, False otherwise.
+    """
+    local_date = last_modified(local_path)
+    remote_date = last_modified_http(http_path)
+    print(f"Local date: {local_date}, Remote date: {remote_date}")
+    if local_date is None or remote_date is None:
+        return False
+    return local_date >= remote_date
+
+
+def generate_md5(file_path):
+    hash_md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
