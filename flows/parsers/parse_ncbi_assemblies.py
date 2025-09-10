@@ -8,7 +8,6 @@ import sys
 from collections import defaultdict
 from glob import glob
 from os.path import abspath, dirname
-from traceback import format_exc
 from typing import Generator, Optional
 
 from genomehubs import utils as gh_utils
@@ -380,7 +379,6 @@ def process_assembly_reports(
                     f"{e} (line {e.__traceback__.tb_lineno})"
                 )
             )
-            print(format_exc(e))
             continue
 
 
