@@ -240,7 +240,7 @@ def add_report_to_parsed_reports(
                 continue
             linked_row = parsed[acc]
             if accession not in linked_row["linkedAssembly"]:
-                if not linked_row["linkedAssembly"]:
+                if not isinstance(linked_row["linkedAssembly"], list):
                     linked_row["linkedAssembly"] = []
                 linked_row["linkedAssembly"].append(accession)
             if acc not in row["linkedAssembly"]:
