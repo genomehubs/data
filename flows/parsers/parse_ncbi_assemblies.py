@@ -76,6 +76,28 @@ def fetch_ncbi_datasets_sequences(
         yield json.loads(line)
 
 
+def is_atypical_assembly(report: dict, parsed: dict) -> bool:
+    """
+    Check if an assembly is atypical.
+
+    Args:
+        report (dict): A dictionary containing the assembly information.
+        parsed (dict): A dictionary containing parsed data.
+
+    Returns:
+        bool: True if the assembly is atypical, False otherwise.
+    """
+    if "assemblyInfo" not in report:
+        return True
+    if report["assemblyInfo"].get("atypical", {}).get("isAtypical", False):
+        # delete from parsed if present
+        accession = report["accession"]
+        if accession in parsed:
+            del parsed[accession]
+        return True
+    return False
+
+
 def process_assembly_report(
     report: dict, previous_report: Optional[dict], config: Config, parsed: dict
 ) -> dict:
@@ -98,6 +120,8 @@ def process_assembly_report(
     Returns:
         dict: The updated report dictionary.
     """
+    if is_atypical_assembly(report, parsed):
+        return None
     processed_report = {**report, "processedAssemblyInfo": {"organelle": "nucleus"}}
     if "pairedAccession" in report:
         if processed_report["pairedAccession"].startswith("GCF_"):
@@ -336,7 +360,9 @@ def process_assembly_reports(
             processed_report = process_assembly_report(
                 report, previous_report, config, parsed
             )
-            if use_previous_report(processed_report, parsed, config):
+            if processed_report is None or use_previous_report(
+                processed_report, parsed, config
+            ):
                 continue
             fetch_and_parse_sequence_report(processed_report)
             append_features(processed_report, config)
