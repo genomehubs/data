@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+# sourcery skip: avoid-builtin-shadow
 import os
 import subprocess
 import sys
