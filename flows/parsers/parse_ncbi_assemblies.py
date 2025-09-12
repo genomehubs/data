@@ -120,8 +120,9 @@ def process_assembly_report(
     Returns:
         dict: The updated report dictionary.
     """
-    if is_atypical_assembly(report, parsed):
-        return None
+    # Uncomment to filter atypical assemblies
+    # if is_atypical_assembly(report, parsed):
+    #     return None
     processed_report = {**report, "processedAssemblyInfo": {"organelle": "nucleus"}}
     if "pairedAccession" in report:
         if processed_report["pairedAccession"].startswith("GCF_"):
