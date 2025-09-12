@@ -119,6 +119,8 @@ deployments:
     # This flow updates the ENA taxonomy dump
     entrypoint: flows/updaters/update_ena_taxonomy_extra.py:update_ena_taxonomy_extra
     parameters:
+      # Root taxon Id to use. 2759 is the taxon Id for Eukaryota
+      root_taxid: "2759"
       # Local path to the NCBI taxonomy dump files
       taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
       # Local path to save the ENA taxonomy JSONL file
@@ -134,6 +136,7 @@ deployments:
         expect:
           - update.ncbi.taxonomy.finished
         parameters:
+          root_taxid: "2759"
           taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
           output_path: "/home/ubuntu/tmp/test/ena-taxonomy/ena-taxonomy-extra.jsonl"
           s3_path: "s3://goat/resources/taxonomy/ena/ena-taxonomy-extra.jsonl"
