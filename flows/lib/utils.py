@@ -1,8 +1,10 @@
 #!/usr/bin/python3
 
 import contextlib
+import gzip
 import hashlib
 import os
+import shutil
 from argparse import Action
 from csv import DictReader, Sniffer
 from datetime import datetime
@@ -600,13 +602,14 @@ def find_s3_file(s3_path: list, filename: str) -> str:
     return None
 
 
-def fetch_from_s3(s3_path: str, local_path: str) -> None:
+def fetch_from_s3(s3_path: str, local_path: str, gz: bool = False) -> None:
     """
     Fetch a file from S3.
 
     Args:
         s3_path (str): Path to the remote file on s3.
         local_path (str): Path to the local file.
+        gz (bool): Whether to gunzip the file after downloading. Defaults to False.
 
     Returns:
         None: This function downloads the file from S3 to the local path.
@@ -622,19 +625,28 @@ def fetch_from_s3(s3_path: str, local_path: str) -> None:
 
     # Download the file from S3 to the local path
     try:
-        s3.download_file(Bucket=bucket, Key=key, Filename=local_path)
+        if gz:
+            s3.download_file(Bucket=bucket, Key=key, Filename=f"{local_path}.gz")
+            # unzip the file
+            with gzip.open(f"{local_path}.gz", "rb") as f_in:
+                with open(local_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            os.remove(f"{local_path}.gz")
+        else:
+            s3.download_file(Bucket=bucket, Key=key, Filename=local_path)
     except ClientError as e:
         print(f"Error downloading {s3_path} to {local_path}: {e}")
         raise e
 
 
-def upload_to_s3(local_path: str, s3_path: str) -> None:
+def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
     """
     Upload a file to S3.
 
     Args:
         local_path (str): Path to the local file.
         s3_path (str): Path to the remote file on s3.
+        gz (bool): Whether to gzip the file before uploading. Defaults to False.
 
     Returns:
         None: This function uploads the local file to S3.
@@ -650,7 +662,14 @@ def upload_to_s3(local_path: str, s3_path: str) -> None:
 
     # Upload the file to S3
     try:
-        s3.upload_file(Filename=local_path, Bucket=bucket, Key=key)
+        if gz:
+            with open(local_path, "rb") as f_in:
+                with gzip.open(f"{local_path}.gz", "wb") as f_out:
+                    f_out.write(f_in.read())
+            s3.upload_file(Filename=f"{local_path}.gz", Bucket=bucket, Key=key)
+            os.remove(f"{local_path}.gz")
+        else:
+            s3.upload_file(Filename=local_path, Bucket=bucket, Key=key)
     except ClientError as e:
         print(f"Error uploading {local_path} to {s3_path}: {e}")
         raise e
