@@ -13,20 +13,12 @@ if __name__ == "__main__" and __package__ is None:
 import json
 
 from flows.lib.conditional_import import emit_event, flow, task
-from flows.lib.shared_args import (
-    OUTPUT_PATH,
-    ROOT_TAXID,
-    S3_PATH,
-    default,
-    parse_args,
-    required,
-)
+from flows.lib.shared_args import OUTPUT_PATH, parse_args, required
 from flows.lib.utils import is_local_file_current_http
 
 
 @task(retries=2, retry_delay_seconds=2, log_prints=True)
 def fetch_ott_taxonomy(
-    root_taxid: str,
     local_path: str,
     http_path: str,
 ) -> bool:
@@ -34,7 +26,6 @@ def fetch_ott_taxonomy(
     Fetch the OTT taxonomy  and filter by root taxon if specified.
 
     Args:
-        root_taxid (str): Root taxon ID to filter by.
         http_path (str): URL to fetch the taxonomy from.
         local_path (str): Path to save the taxonomy.
 
@@ -138,13 +129,11 @@ def set_ott_url() -> str:
 
 
 @flow()
-def update_ott_taxonomy(root_taxid: str, output_path: str, s3_path: str) -> None:
-    """Fetch and optionally update the OTT taxonomy file.
+def update_ott_taxonomy(output_path: str) -> None:
+    """Fetch the OTT taxonomy file.
 
     Args:
-        root_taxid (str): Root taxon ID to filter by.
         output_path (str): Path to save the taxonomy dump.
-        s3_path (str): S3 path to compare with.
     """
     http_path = set_ott_url()
     status = None
@@ -154,9 +143,7 @@ def update_ott_taxonomy(root_taxid: str, output_path: str, s3_path: str) -> None
         complete = True
     else:
         status = False
-        complete = fetch_ott_taxonomy(
-            local_path=output_path, http_path=http_path, root_taxid=root_taxid
-        )
+        complete = fetch_ott_taxonomy(local_path=output_path, http_path=http_path)
     print(f"OTT taxonomy file matches previous: {status}")
 
     if complete:
@@ -175,8 +162,8 @@ def update_ott_taxonomy(root_taxid: str, output_path: str, s3_path: str) -> None
 if __name__ == "__main__":
     """Run the flow."""
     args = parse_args(
-        [default(ROOT_TAXID, "taxon"), required(OUTPUT_PATH), S3_PATH],
-        "Fetch OTT taxonomy file and optionally filter by root taxon.",
+        [required(OUTPUT_PATH)],
+        "Fetch OTT taxonomy file.",
     )
 
     update_ott_taxonomy(**vars(args))

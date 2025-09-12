@@ -123,6 +123,8 @@ deployments:
       taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
       # Local path to save the ENA taxonomy JSONL file
       output_path: "/home/ubuntu/tmp/test/ena-taxonomy/ena-taxonomy-extra.jsonl"
+      # The S3 path to save the ENA taxonomy JSONL file
+      s3_path: "s3://goat/resources/taxonomy/ena/ena-taxonomy-extra.jsonl"
       # A flag to indicate if the flow should append to the existing JSONL file
       append: true
     triggers:
@@ -161,3 +163,4 @@ deployments:
           input_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota_taxonomy_input.yaml"
           output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/genomehubs_taxonomy_eukaryota.jsonl"
           s3_path: "s3://goat/resources/taxonomy/genomehubs/genomehubs_taxonomy_eukaryota.jsonl"
+    work_pool: *goat_data_work_pool

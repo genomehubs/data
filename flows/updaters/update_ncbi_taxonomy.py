@@ -10,28 +10,19 @@ if __name__ == "__main__" and __package__ is None:
     __package__ = "flows"
 
 from flows.lib.conditional_import import emit_event, flow, task
-from flows.lib.shared_args import (
-    OUTPUT_PATH,
-    ROOT_TAXID,
-    S3_PATH,
-    default,
-    parse_args,
-    required,
-)
+from flows.lib.shared_args import OUTPUT_PATH, parse_args, required
 from flows.lib.utils import generate_md5, is_local_file_current_http
 
 
 @task(retries=2, retry_delay_seconds=2, log_prints=True)
 def fetch_ncbi_taxonomy(
-    root_taxid: str,
     local_path: str,
     http_path: str = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz",
 ) -> bool:
     """
-    Fetch the NCBI taxonomy dump and filter by root taxon if specified.
+    Fetch the NCBI taxonomy dump.
 
     Args:
-        root_taxid (str): Root taxon ID to filter by.
         http_path (str): URL to fetch the taxonomy dump from.
         local_path (str): Path to save the taxonomy dump.
 
@@ -95,13 +86,11 @@ def taxonomy_is_up_to_date(local_path: str, http_path: str) -> bool:
 
 
 @flow()
-def update_ncbi_taxonomy(root_taxid: str, output_path: str, s3_path: str) -> None:
-    """Fetch and optionally update the NCBI taxonomy dump.
+def update_ncbi_taxonomy(output_path: str) -> None:
+    """Fetch and the NCBI taxonomy dump.
 
     Args:
-        root_taxid (str): Root taxon ID to filter by.
         output_path (str): Path to save the taxonomy dump.
-        s3_path (str): S3 path to compare with.
     """
     http_path = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
     status = None
@@ -109,9 +98,7 @@ def update_ncbi_taxonomy(root_taxid: str, output_path: str, s3_path: str) -> Non
         status = True
     else:
         status = False
-        fetch_ncbi_taxonomy(
-            local_path=output_path, http_path=http_path, root_taxid=root_taxid
-        )
+        fetch_ncbi_taxonomy(local_path=output_path, http_path=http_path)
     print(f"Taxonomy update status: {status}")
 
     emit_event(
@@ -129,8 +116,8 @@ def update_ncbi_taxonomy(root_taxid: str, output_path: str, s3_path: str) -> Non
 if __name__ == "__main__":
     """Run the flow."""
     args = parse_args(
-        [default(ROOT_TAXID, "taxon"), required(OUTPUT_PATH), S3_PATH],
-        "Fetch NCBI taxdump and optionally filter by root taxon.",
+        [required(OUTPUT_PATH)],
+        "Fetch NCBI taxdump.",
     )
 
     update_ncbi_taxonomy(**vars(args))
