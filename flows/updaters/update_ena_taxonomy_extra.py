@@ -8,6 +8,8 @@ from urllib.request import urlopen
 
 from tqdm import tqdm
 
+from flows.lib.utils import fetch_from_s3, upload_to_s3
+
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
     __package__ = "flows"
@@ -110,9 +112,19 @@ def update_ena_jsonl(new_tax_ids: set[str], output_path: str, append: bool) -> N
         print(f"Error updating {output_path}: {e}")
 
 
+def fetch_s3_jsonl(s3_path: str, local_path: str) -> None:
+    print(f"Fetching existing ENA JSONL file from {s3_path} to {local_path}")
+    fetch_from_s3(s3_path, local_path)
+
+
+def upload_s3_jsonl(local_path: str, s3_path: str) -> None:
+    print(f"Uploading updated ENA JSONL file from {local_path} to {s3_path}")
+    upload_to_s3(local_path, s3_path)
+
+
 @flow()
 def update_ena_taxonomy_extra(
-    root_taxid: str, taxdump_path: str, output_path: str, append: bool
+    root_taxid: str, taxdump_path: str, output_path: str, s3_path: str, append: bool
 ) -> None:
     """Update the ENA taxonomy JSONL file.
 
@@ -125,35 +137,32 @@ def update_ena_taxonomy_extra(
 
     # 1. read IDs from ncbi nodes file
     existing_tax_ids = read_ncbi_tax_ids(taxdump_path)
-    # 2. read existing IDs from local JSONL file
+    # 2. fetch jsonl file from s3 if s3_path is provided
+    if s3_path:
+        fetch_s3_jsonl(s3_path, output_path)
+    # 3. read existing IDs from local JSONL file
     if append:
         add_jsonl_tax_ids(output_path, existing_tax_ids)
-    # 3. fetch list of new IDs from ENA API
+    # 4. fetch list of new IDs from ENA API
     new_tax_ids = get_ena_api_new_taxids(root_taxid, existing_tax_ids)
-    # 4. fetch details for new IDs from ENA API and save to JSONL file
+    # 5. fetch details for new IDs from ENA API and save to JSONL file
     update_ena_jsonl(new_tax_ids, output_path, append)
+    # 6. upload updated JSONL file to s3 if s3_path is provided
+    if s3_path:
+        upload_s3_jsonl(output_path, s3_path)
 
-    # http_path = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
-    # status = None
-    # if taxonomy_is_up_to_date(output_path, http_path):
-    #     status = True
-    # else:
-    #     status = False
-    #     fetch_ncbi_taxonomy(
-    #         local_path=output_path, http_path=http_path, root_taxid=root_taxid
-    #     )
-    # print(f"Taxonomy update status: {status}")
+    status = len(new_tax_ids) == 0
 
-    # emit_event(
-    #     event="update.ncbi.taxonomy.finished",
-    #     resource={
-    #         "prefect.resource.id": f"fetch.taxonomy.{output_path}",
-    #         "prefect.resource.type": "ncbi.taxonomy",
-    #         "prefect.resource.matches.previous": "yes" if status else "no",
-    #     },
-    #     payload={"matches_previous": status},
-    # )
-    # return status
+    emit_event(
+        event="update.ena.taxonomy.finished",
+        resource={
+            "prefect.resource.id": f"fetch.taxonomy.{output_path}",
+            "prefect.resource.type": "ena.taxonomy",
+            "prefect.resource.matches.previous": ("yes" if status else "no"),
+        },
+        payload={"matches_previous": status},
+    )
+    return status
 
 
 if __name__ == "__main__":
@@ -163,8 +172,8 @@ if __name__ == "__main__":
             default(ROOT_TAXID, "2759"),
             required(TAXDUMP_PATH),
             required(OUTPUT_PATH),
+            S3_PATH,
             APPEND,
-            # S3_PATH,
         ],
         "Fetch extra taxa from ENA taxonomy API and optionally filter by root taxon.",
     )

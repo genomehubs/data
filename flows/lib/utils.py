@@ -600,6 +600,62 @@ def find_s3_file(s3_path: list, filename: str) -> str:
     return None
 
 
+def fetch_from_s3(s3_path: str, local_path: str) -> None:
+    """
+    Fetch a file from S3.
+
+    Args:
+        s3_path (str): Path to the remote file on s3.
+        local_path (str): Path to the local file.
+
+    Returns:
+        None: This function downloads the file from S3 to the local path.
+    """
+    s3 = boto3.client("s3")
+
+    # Extract bucket name and key from the S3 path
+    def parse_s3_path(s3_path):
+        bucket, key = s3_path.removeprefix("s3://").split("/", 1)
+        return bucket, key
+
+    bucket, key = parse_s3_path(s3_path)
+
+    # Download the file from S3 to the local path
+    try:
+        s3.download_file(Bucket=bucket, Key=key, Filename=local_path)
+    except ClientError as e:
+        print(f"Error downloading {s3_path} to {local_path}: {e}")
+        raise e
+
+
+def upload_to_s3(local_path: str, s3_path: str) -> None:
+    """
+    Upload a file to S3.
+
+    Args:
+        local_path (str): Path to the local file.
+        s3_path (str): Path to the remote file on s3.
+
+    Returns:
+        None: This function uploads the local file to S3.
+    """
+    s3 = boto3.client("s3")
+
+    # Extract bucket name and key from the S3 path
+    def parse_s3_path(s3_path):
+        bucket, key = s3_path.removeprefix("s3://").split("/", 1)
+        return bucket, key
+
+    bucket, key = parse_s3_path(s3_path)
+
+    # Upload the file to S3
+    try:
+        s3.upload_file(Filename=local_path, Bucket=bucket, Key=key)
+    except ClientError as e:
+        print(f"Error uploading {local_path} to {s3_path}: {e}")
+        raise e
+
+
 def set_index_name(
     index_type: str,
     hub_name: str,
