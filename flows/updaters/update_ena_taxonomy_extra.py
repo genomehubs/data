@@ -8,8 +8,6 @@ from urllib.request import urlopen
 
 from tqdm import tqdm
 
-from flows.lib.utils import fetch_from_s3, upload_to_s3
-
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
     __package__ = "flows"
@@ -25,9 +23,10 @@ from flows.lib.shared_args import (
     parse_args,
     required,
 )
+from flows.lib.utils import fetch_from_s3, upload_to_s3
 
 
-@task()
+@task(log_prints=True)
 def read_ncbi_tax_ids(taxdump_path: str) -> set[str]:
     """Read NCBI tax IDs from the taxdump nodes file."""
     print(f"Reading NCBI taxids from {taxdump_path}")
@@ -41,7 +40,7 @@ def read_ncbi_tax_ids(taxdump_path: str) -> set[str]:
     return tax_ids
 
 
-@task()
+@task(log_prints=True)
 def add_jsonl_tax_ids(jsonl_path: str, tax_ids: set[str]) -> None:
     print(f"Reading previously fetched ENA taxids from {jsonl_path}")
     filtered_path = f"{jsonl_path}.filtered"
@@ -84,6 +83,7 @@ def get_ena_api_new_taxids(root_taxid: str, existing_tax_ids: set[str]) -> set[s
     return new_tax_ids
 
 
+@task(log_prints=True)
 def fetch_ena_jsonl(tax_id, f_out):
     print("Fetching new tax_ids from ENA API")
     url = "https://www.ebi.ac.uk/ena/taxonomy/rest/tax-id/"
@@ -112,11 +112,13 @@ def update_ena_jsonl(new_tax_ids: set[str], output_path: str, append: bool) -> N
         print(f"Error updating {output_path}: {e}")
 
 
+@task(log_prints=True)
 def fetch_s3_jsonl(s3_path: str, local_path: str) -> None:
     print(f"Fetching existing ENA JSONL file from {s3_path} to {local_path}")
     fetch_from_s3(s3_path, local_path)
 
 
+@task(log_prints=True)
 def upload_s3_jsonl(local_path: str, s3_path: str) -> None:
     print(f"Uploading updated ENA JSONL file from {local_path} to {s3_path}")
     upload_to_s3(local_path, s3_path)
@@ -132,6 +134,7 @@ def update_ena_taxonomy_extra(
         root_taxid (str): Root taxon ID to filter by.
         taxdump_path (str): Path to the NCBI taxdump files.
         output_path (str): Path to save the taxonomy dump.
+        s3_path (str): S3 path to upload the taxonomy dump.
         append (bool): Flag to append entries to an existing JSONL file.
     """
 

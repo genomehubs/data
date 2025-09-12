@@ -30,6 +30,8 @@ definitions:
       cron: "5 0 * * 1-6"
     weekly: &weekly # Runs every Monday at 00:05 UTC
       cron: "5 0 * * 1"
+    monthly: &monthly # Runs on the 1st of every month at 00:05 UTC
+      cron: "5 0 1 * *"
 
 deployments:
   - name: update-ncbi-datasets
@@ -82,3 +84,80 @@ deployments:
           append: true
           dry_run: true
     work_pool: *goat_data_work_pool
+
+  - name: update-tolid-prefixes
+    # This flow updates the TOLID prefixes file
+    entrypoint: flows/updaters/update_tolid_prefixes.py:update_tolid_prefixes
+    parameters:
+      # Local directory path to save the TOLID prefixes TSV file
+      output_path: "/home/ubuntu/tmp/test/tolid-prefixes"
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ott-taxonomy
+    # This flow updates the OTT taxonomy file
+    entrypoint: flows/updaters/update_ott_taxonomy.py:update_ott_taxonomy
+    parameters:
+      # Local directory path to save the OTT taxonomy file
+      output_path: "/home/ubuntu/tmp/test/ott-taxonomy"
+    schedules:
+      - *monthly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ncbi-taxonomy
+    # This flow updates the NCBI taxonomy dump
+    entrypoint: flows/updaters/update_ncbi_taxonomy.py:update_ncbi_taxonomy
+    parameters:
+      # Local path to save the NCBI taxonomy dump files
+      output_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
+    schedules:
+      - *daily
+    work_pool: *goat_data_work_pool
+
+  - name: update-ena-taxonomy-extra
+    # This flow updates the ENA taxonomy dump
+    entrypoint: flows/updaters/update_ena_taxonomy_extra.py:update_ena_taxonomy_extra
+    parameters:
+      # Local path to the NCBI taxonomy dump files
+      taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
+      # Local path to save the ENA taxonomy JSONL files
+      output_path: "/home/ubuntu/tmp/test/ena-taxonomy"
+      # A flag to indicate if the flow should append to the existing JSONL file
+      append: true
+    triggers:
+      - enabled: true
+        match:
+          prefect.resource.type: ncbi.taxonomy
+        expect:
+          - update.ncbi.taxonomy.finished
+        parameters:
+          taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
+          output_path: "/home/ubuntu/tmp/test/ena-taxonomy"
+          s3_path: "s3://goat/resources/taxonomy/ena/ena-taxonomy-extra.jsonl"
+          append: true
+    work_pool: *goat_data_work_pool
+
+  - name: update-genomehubs-taxonomy
+    # This flow updates the GenomeHubs taxonomy file
+    entrypoint: flows/updaters/update_genomehubs_taxonomy.py:update_genomehubs_taxonomy
+    parameters:
+      # The root taxon Id to use. 2759 is the taxon Id for Eukaryota
+      root_taxid: "2759"
+      # Local path to the input configuration YAML file
+      input_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota_taxonomy_input.yaml"
+      # Local path to save the GenomeHubs taxonomy JSONL file
+      output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/genomehubs_taxonomy_eukaryota.jsonl"
+      # The S3 path to save the GenomeHubs taxonomy JSONL file
+      s3_path: "s3://goat/resources/taxonomy/genomehubs/genomehubs_taxonomy_eukaryota.jsonl"
+    triggers:
+      - enabled: true
+        match:
+          prefect.resource.type: ena.taxonomy
+        expect:
+          - update.ena.taxonomy.finished
+        parameters:
+          root_taxid: "2759"
+          input_path: ""
+          output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/genomehubs_taxonomy_eukaryota.jsonl"
+          s3_path: "s3://goat/resources/taxonomy/genomehubs/genomehubs_taxonomy_eukaryota.jsonl"
