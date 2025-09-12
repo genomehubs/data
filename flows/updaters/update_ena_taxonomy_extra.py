@@ -137,11 +137,11 @@ def update_ena_taxonomy_extra(
 
     # 1. read IDs from ncbi nodes file
     existing_tax_ids = read_ncbi_tax_ids(taxdump_path)
-    # 2. fetch jsonl file from s3 if s3_path is provided
-    if s3_path:
-        fetch_s3_jsonl(s3_path, output_path)
-    # 3. read existing IDs from local JSONL file
     if append:
+        # 2. fetch jsonl file from s3 if s3_path is provided
+        if s3_path:
+            fetch_s3_jsonl(s3_path, output_path)
+        # 3. read existing IDs from local JSONL file
         add_jsonl_tax_ids(output_path, existing_tax_ids)
     # 4. fetch list of new IDs from ENA API
     new_tax_ids = get_ena_api_new_taxids(root_taxid, existing_tax_ids)
