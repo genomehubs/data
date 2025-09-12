@@ -135,7 +135,7 @@ deployments:
           - update.ncbi.taxonomy.finished
         parameters:
           taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
-          output_path: "/home/ubuntu/tmp/test/ena-taxonomy"
+          output_path: "/home/ubuntu/tmp/test/ena-taxonomy/ena-taxonomy-extra.jsonl"
           s3_path: "s3://goat/resources/taxonomy/ena/ena-taxonomy-extra.jsonl"
           append: true
     work_pool: *goat_data_work_pool
