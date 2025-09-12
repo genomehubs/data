@@ -17,7 +17,7 @@ pull:
       # Pull the genomehubs/data repository to get the latest flows
       id: clone-data
       repository: https://github.com/genomehubs/data.git
-      branch: main
+      branch: feature/pipeline-updates
 
 definitions:
   work_pools:
@@ -121,8 +121,8 @@ deployments:
     parameters:
       # Local path to the NCBI taxonomy dump files
       taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
-      # Local path to save the ENA taxonomy JSONL files
-      output_path: "/home/ubuntu/tmp/test/ena-taxonomy"
+      # Local path to save the ENA taxonomy JSONL file
+      output_path: "/home/ubuntu/tmp/test/ena-taxonomy/ena-taxonomy-extra.jsonl"
       # A flag to indicate if the flow should append to the existing JSONL file
       append: true
     triggers:
@@ -145,11 +145,11 @@ deployments:
       # The root taxon Id to use. 2759 is the taxon Id for Eukaryota
       root_taxid: "2759"
       # Local path to the input configuration YAML file
-      input_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota_taxonomy_input.yaml"
+      input_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota-taxonomy-input.yaml"
       # Local path to save the GenomeHubs taxonomy JSONL file
-      output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/genomehubs_taxonomy_eukaryota.jsonl"
+      output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota/nodes.jsonl"
       # The S3 path to save the GenomeHubs taxonomy JSONL file
-      s3_path: "s3://goat/resources/taxonomy/genomehubs/genomehubs_taxonomy_eukaryota.jsonl"
+      s3_path: "s3://goat/resources/taxonomy/genomehubs/eukaryota-nodes.jsonl"
     triggers:
       - enabled: true
         match:
@@ -158,6 +158,6 @@ deployments:
           - update.ena.taxonomy.finished
         parameters:
           root_taxid: "2759"
-          input_path: ""
+          input_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota_taxonomy_input.yaml"
           output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/genomehubs_taxonomy_eukaryota.jsonl"
           s3_path: "s3://goat/resources/taxonomy/genomehubs/genomehubs_taxonomy_eukaryota.jsonl"
