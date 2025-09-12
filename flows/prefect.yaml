@@ -139,7 +139,7 @@ deployments:
           root_taxid: "2759"
           taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
           output_path: "/home/ubuntu/tmp/test/ena-taxonomy/ena-taxonomy-extra.jsonl"
-          s3_path: "s3://goat/resources/taxonomy/ena/ena-taxonomy-extra.jsonl"
+          s3_path: "s3://goat/resources/taxonomy/ena/ena-taxonomy-extra.jsonl.gz"
           append: true
     work_pool: *goat_data_work_pool
 
