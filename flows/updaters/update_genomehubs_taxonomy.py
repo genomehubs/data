@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import subprocess
 import sys
 from collections import defaultdict
@@ -106,17 +107,16 @@ def update_genomehubs_taxonomy(
     # 1. parse input config yaml
     file_paths = read_input_config(input_path)
 
-    # 2. check files exist locally
+    # 2. check files exist locally (file or directory)
+
     for key, paths in file_paths.items():
         if "input" in paths:
-            try:
-                with open(paths["input"], "r"):
-                    pass
-            except FileNotFoundError:
-                print(f"Error: {paths['input']} not found")
+            input_path = paths["input"]
+            if not os.path.exists(input_path):
+                print(f"Error: {input_path} not found")
                 exit()
-            except Exception as e:
-                print(f"Error reading {paths['input']}: {e}")
+            if not (os.path.isfile(input_path) or os.path.isdir(input_path)):
+                print(f"Error: {input_path} is not a file or directory")
                 exit()
     # 3. run blobtk to collate and filter taxonomies
     run_blobtk_taxonomy(root_taxid, input_path, output_path)
