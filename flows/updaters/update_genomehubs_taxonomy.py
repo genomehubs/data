@@ -66,7 +66,7 @@ def run_blobtk_taxonomy(root_taxid: str, input_path: str, output_path: str) -> N
         "taxonomy",
         "-c",
         input_path,
-        "-o",
+        "-O",
         output_path,
         "-r",
         root_taxid,
