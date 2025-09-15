@@ -631,11 +631,12 @@ def fetch_from_s3(s3_path: str, local_path: str, gz: bool = False) -> None:
     # Download the file from S3 to the local path
     try:
         if gz:
-            s3.download_file(Bucket=bucket, Key=key, Filename=f"{local_path}.gz")
-            with open(local_path, "rb") as f_in:
-                with gzip.open(f"{local_path}.gz", "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
-            os.remove(local_path)
+            gz_path = f"{local_path}.gz"
+            s3.download_file(Bucket=bucket, Key=key, Filename=gz_path)
+            # Unzip gz_path to local_path, then remove gz_path
+            with gzip.open(gz_path, "rb") as f_in, open(local_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+            os.remove(gz_path)
         else:
             s3.download_file(Bucket=bucket, Key=key, Filename=local_path)
     except ClientError as e:

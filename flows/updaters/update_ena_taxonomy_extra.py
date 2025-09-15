@@ -113,13 +113,13 @@ def update_ena_jsonl(new_tax_ids: set[str], output_path: str, append: bool) -> N
 
 
 @task(log_prints=True)
-def fetch_s3_jsonl(s3_path: str, local_path: str, gz: bool = False) -> None:
+def fetch_s3_jsonl(s3_path: str, local_path: str) -> None:
     print(f"Fetching existing ENA JSONL file from {s3_path} to {local_path}")
     fetch_from_s3(s3_path, local_path)
 
 
 @task(log_prints=True)
-def upload_s3_jsonl(local_path: str, s3_path: str, gz: bool = False) -> None:
+def upload_s3_jsonl(local_path: str, s3_path: str) -> None:
     print(f"Uploading updated ENA JSONL file from {local_path} to {s3_path}")
     upload_to_s3(local_path, s3_path)
 
@@ -143,7 +143,7 @@ def update_ena_taxonomy_extra(
     if append:
         # 2. fetch jsonl file from s3 if s3_path is provided
         if s3_path:
-            fetch_s3_jsonl(s3_path, output_path, gz=True)
+            fetch_s3_jsonl(s3_path, output_path)
         # 3. read existing IDs from local JSONL file
         add_jsonl_tax_ids(output_path, existing_tax_ids)
     # 4. fetch list of new IDs from ENA API
@@ -152,8 +152,7 @@ def update_ena_taxonomy_extra(
     update_ena_jsonl(new_tax_ids, output_path, append)
     # 6. upload updated JSONL file to s3 if s3_path is provided
     if s3_path:
-        # gzip the file first
-        upload_s3_jsonl(output_path, s3_path, gz=True)
+        upload_s3_jsonl(output_path, s3_path)
 
     status = len(new_tax_ids) == 0
 
