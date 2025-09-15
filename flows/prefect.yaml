@@ -163,7 +163,7 @@ deployments:
           - update.ena.taxonomy.finished
         parameters:
           root_taxid: "2759"
-          input_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota_taxonomy_input.yaml"
-          output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/genomehubs_taxonomy_eukaryota.jsonl"
-          s3_path: "s3://goat/resources/taxonomy/genomehubs/genomehubs_taxonomy_eukaryota.jsonl"
+          input_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota-taxonomy-input.yaml"
+          output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/genomehubs-taxonomy-eukaryota.jsonl"
+          s3_path: "s3://goat/resources/taxonomy/genomehubs/genomehubs-taxonomy-eukaryota.jsonl"
     work_pool: *goat_data_work_pool
