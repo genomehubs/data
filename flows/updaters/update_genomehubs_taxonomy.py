@@ -135,16 +135,16 @@ def update_genomehubs_taxonomy(
 
     # 4. upload updated JSONL file to s3 if s3_path is provided
     if s3_path:
-        upload_s3_file(f"{output_path}/nodes.jsonl", s3_path)
+        upload_s3_file(f"{output_path}", s3_path)
 
     # 5. count lines in output file
     line_count = 0
     try:
-        with open(f"{output_path}/nodes.jsonl", "r") as f:
+        with open(f"{output_path}", "r") as f:
             line_count = sum(1 for _ in f)
         print(f"Output file has {line_count} lines")
     except Exception as e:
-        print(f"Error reading {output_path}/nodes.jsonl: {e}")
+        print(f"Error reading {output_path}: {e}")
         exit()
 
     emit_event(
