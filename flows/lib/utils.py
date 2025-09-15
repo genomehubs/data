@@ -4,7 +4,9 @@ import contextlib
 import gzip
 import hashlib
 import os
+import shlex
 import shutil
+import subprocess
 from argparse import Action
 from csv import DictReader, Sniffer
 from datetime import datetime
@@ -623,15 +625,17 @@ def fetch_from_s3(s3_path: str, local_path: str, gz: bool = False) -> None:
 
     bucket, key = parse_s3_path(s3_path)
 
+    if s3_path.endswith(".gz") and not local_path.endswith(".gz"):
+        gz = True
+
     # Download the file from S3 to the local path
     try:
         if gz:
             s3.download_file(Bucket=bucket, Key=key, Filename=f"{local_path}.gz")
-            # unzip the file
-            with gzip.open(f"{local_path}.gz", "rb") as f_in:
-                with open(local_path, "wb") as f_out:
+            with open(local_path, "rb") as f_in:
+                with gzip.open(f"{local_path}.gz", "wb") as f_out:
                     shutil.copyfileobj(f_in, f_out)
-            os.remove(f"{local_path}.gz")
+            os.remove(local_path)
         else:
             s3.download_file(Bucket=bucket, Key=key, Filename=local_path)
     except ClientError as e:
@@ -651,26 +655,41 @@ def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
     Returns:
         None: This function uploads the local file to S3.
     """
-    s3 = boto3.client("s3")
 
-    # Extract bucket name and key from the S3 path
-    def parse_s3_path(s3_path):
-        bucket, key = s3_path.removeprefix("s3://").split("/", 1)
-        return bucket, key
+    if s3_path.endswith(".gz") and not local_path.endswith(".gz"):
+        gz = True
 
-    bucket, key = parse_s3_path(s3_path)
-
-    # Upload the file to S3
     try:
         if gz:
-            with open(local_path, "rb") as f_in:
-                with gzip.open(f"{local_path}.gz", "wb") as f_out:
-                    f_out.write(f_in.read())
-            s3.upload_file(Filename=f"{local_path}.gz", Bucket=bucket, Key=key)
-            os.remove(f"{local_path}.gz")
+            gz_path = f"{local_path}.gz"
+            with open(local_path, "rb") as f_in, gzip.open(gz_path, "wb") as f_out:
+                f_out.write(f_in.read())
+            cmd = [
+                "s3cmd",
+                "put",
+                "setacl",
+                "--acl-public",
+                shlex.quote(gz_path),
+                shlex.quote(s3_path),
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            os.remove(gz_path)
         else:
-            s3.upload_file(Filename=local_path, Bucket=bucket, Key=key)
-    except ClientError as e:
+            cmd = [
+                "s3cmd",
+                "put",
+                "setacl",
+                "--acl-public",
+                shlex.quote(local_path),
+                shlex.quote(s3_path),
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(
+                f"Error uploading {local_path} to {s3_path} with s3cmd: {result.stderr}"
+            )
+            raise RuntimeError(f"s3cmd upload failed: {result.stderr}")
+    except Exception as e:
         print(f"Error uploading {local_path} to {s3_path}: {e}")
         raise e
 

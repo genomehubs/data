@@ -115,13 +115,13 @@ def update_ena_jsonl(new_tax_ids: set[str], output_path: str, append: bool) -> N
 @task(log_prints=True)
 def fetch_s3_jsonl(s3_path: str, local_path: str, gz: bool = False) -> None:
     print(f"Fetching existing ENA JSONL file from {s3_path} to {local_path}")
-    fetch_from_s3(s3_path, local_path, gz=gz)
+    fetch_from_s3(s3_path, local_path)
 
 
 @task(log_prints=True)
 def upload_s3_jsonl(local_path: str, s3_path: str, gz: bool = False) -> None:
     print(f"Uploading updated ENA JSONL file from {local_path} to {s3_path}")
-    upload_to_s3(local_path, s3_path, gz=gz)
+    upload_to_s3(local_path, s3_path)
 
 
 @flow()
