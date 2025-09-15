@@ -113,6 +113,23 @@ def update_ena_jsonl(new_tax_ids: set[str], output_path: str, append: bool) -> N
 
 
 @task(log_prints=True)
+def sort_jsonl_by_lineage(jsonl_path: str) -> None:
+    print(f"Sorting JSONL file by lineage at {jsonl_path}")
+    sorted_path = f"{jsonl_path}.sorted"
+    try:
+        with open(jsonl_path, "r") as f:
+            data = [json.loads(line) for line in f]
+        data.sort(key=lambda x: x.get("lineage", ""))
+        with open(sorted_path, "w") as f_out:
+            for entry in data:
+                f_out.write(json.dumps(entry) + "\n")
+        os.replace(sorted_path, jsonl_path)
+    except Exception as e:
+        print(f"Error sorting {jsonl_path}: {e}")
+        exit()
+
+
+@task(log_prints=True)
 def fetch_s3_jsonl(s3_path: str, local_path: str) -> None:
     print(f"Fetching existing ENA JSONL file from {s3_path} to {local_path}")
     fetch_from_s3(s3_path, local_path)
@@ -150,7 +167,9 @@ def update_ena_taxonomy_extra(
     new_tax_ids = get_ena_api_new_taxids(root_taxid, existing_tax_ids)
     # 5. fetch details for new IDs from ENA API and save to JSONL file
     update_ena_jsonl(new_tax_ids, output_path, append)
-    # 6. upload updated JSONL file to s3 if s3_path is provided
+    # 6. sort the JSONL file by lineage
+    sort_jsonl_by_lineage(output_path)
+    # 7. upload updated JSONL file to s3 if s3_path is provided
     if s3_path:
         upload_s3_jsonl(output_path, s3_path)
 
