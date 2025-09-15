@@ -111,12 +111,12 @@ def update_genomehubs_taxonomy(
 
     for key, paths in file_paths.items():
         if "input" in paths:
-            input_path = paths["input"]
-            if not os.path.exists(input_path):
-                print(f"Error: {input_path} not found")
+            taxonomy_path = paths["input"]
+            if not os.path.exists(taxonomy_path):
+                print(f"Error: {taxonomy_path} not found")
                 exit()
-            if not (os.path.isfile(input_path) or os.path.isdir(input_path)):
-                print(f"Error: {input_path} is not a file or directory")
+            if not (os.path.isfile(taxonomy_path) or os.path.isdir(taxonomy_path)):
+                print(f"Error: {taxonomy_path} is not a file or directory")
                 exit()
     # 3. run blobtk to collate and filter taxonomies
     run_blobtk_taxonomy(root_taxid, input_path, output_path)
