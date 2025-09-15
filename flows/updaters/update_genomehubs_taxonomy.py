@@ -73,7 +73,19 @@ def run_blobtk_taxonomy(root_taxid: str, input_path: str, output_path: str) -> N
     ]
     print(f"Running command: {' '.join(cmd)}")
     try:
-        subprocess.run(cmd, check=True)
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        for line in process.stdout:
+            print(line, end="")
+        process.wait()
+        if process.returncode != 0:
+            print(f"Command failed with exit code {process.returncode}")
+            exit()
     except Exception as e:
         print(f"Error running blobtk taxonomy: {e}")
         exit()
