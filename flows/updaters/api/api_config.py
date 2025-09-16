@@ -24,7 +24,7 @@ def vgl_url_opener(**kwargs):
         "https://raw.githubusercontent.com/vgl-hub/genome-portal/"
         "master/_data/table_tracker.yml"
     )
-    return requests.get(vgl_url, stream=True)
+    return requests.get(vgl_url, stream=True, timeout=300)
 
 
 def vgl_hub_count_handler(r_text):
@@ -81,7 +81,7 @@ nhm_headers = {"content-type": "application/json"}
 
 
 def nhm_url_opener(**kwargs):
-    return requests.post(nhm_url, headers=nhm_headers, json=nhm_post_data)
+    return requests.post(nhm_url, headers=nhm_headers, json=nhm_post_data, timeout=300)
 
 
 def nhm_api_count_handler(r_text):
@@ -93,7 +93,9 @@ def nhm_row_handler(fieldnames, **kwargs):
     nhm_post_data_after = nhm_post_data
     result = []
     while True:
-        response = requests.post(nhm_url, headers=nhm_headers, json=nhm_post_data_after)
+        response = requests.post(
+            nhm_url, headers=nhm_headers, json=nhm_post_data_after, timeout=300
+        )
         r = response.json()
         dl = r["result"]["records"]
         for species in dl:
@@ -167,7 +169,7 @@ sts_fieldnames = [
 
 def sts_url_opener(token):
     return requests.get(
-        sts_url, headers={"Token": token, "Project": "ALL"}, verify=False
+        sts_url, headers={"Token": token, "Project": "ALL"}, verify=False, timeout=300
     )
 
 
@@ -185,7 +187,7 @@ def sts_row_handler(result_count, fieldnames, token, **kwargs):
 
         url = f"{sts_url}?page={page}&page_size={page_size}"
         r = requests.get(
-            url, headers={"Token": token, "Project": "ALL"}, verify=False
+            url, headers={"Token": token, "Project": "ALL"}, verify=False, timeout=300
         ).json()
         dl = r["data"]["list"]
 

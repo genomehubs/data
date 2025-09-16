@@ -10,6 +10,7 @@ import yaml
 
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
+    # sourcery skip: avoid-builtin-shadow
     __package__ = "flows"
 
 from flows.lib.conditional_import import emit_event, flow, task
@@ -22,7 +23,7 @@ from flows.lib.shared_args import (
     parse_args,
     required,
 )
-from flows.lib.utils import fetch_from_s3, upload_to_s3
+from flows.lib.utils import fetch_from_s3, is_safe_path, upload_to_s3
 
 
 def get_file_paths_from_config(config: dict, file_paths: dict) -> dict:
@@ -61,6 +62,12 @@ def read_input_config(input_path: str) -> dict:
 @task(log_prints=True)
 def run_blobtk_taxonomy(root_taxid: str, input_path: str, output_path: str) -> None:
     print(f"Running blobtk taxonomy with root taxid {root_taxid}")
+    if not is_safe_path(root_taxid):
+        raise ValueError(f"Unsafe root taxid: {root_taxid}")
+    if not is_safe_path(input_path):
+        raise ValueError(f"Unsafe input path: {input_path}")
+    if not is_safe_path(output_path):
+        raise ValueError(f"Unsafe output path: {output_path}")
     cmd = [
         "blobtk",
         "taxonomy",

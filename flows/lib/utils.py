@@ -4,7 +4,7 @@ import contextlib
 import gzip
 import hashlib
 import os
-import shlex
+import re
 import shutil
 import subprocess
 from argparse import Action
@@ -559,7 +559,7 @@ def find_http_file(http_path: str, filename: str) -> str:
     Returns:
         str: Path to the file.
     """
-    response = requests.get(f"{http_path}/{filename}")
+    response = requests.get(f"{http_path}/{filename}", timeout=300)
     return f"{http_path}/{filename}" if response.status_code == 200 else None
 
 
@@ -604,6 +604,17 @@ def find_s3_file(s3_path: list, filename: str) -> str:
     return None
 
 
+def is_safe_path(path: str) -> bool:
+    # Only allow alphanumeric, dash, underscore, dot, slash, and colon (for s3)
+    return bool(re.match(r"^[\w\-/.:]+$", path))
+
+
+def parse_s3_path(s3_path):
+    # Extract bucket name and key from the S3 path
+    bucket, key = s3_path.removeprefix("s3://").split("/", 1)
+    return bucket, key
+
+
 def fetch_from_s3(s3_path: str, local_path: str, gz: bool = False) -> None:
     """
     Fetch a file from S3.
@@ -617,11 +628,6 @@ def fetch_from_s3(s3_path: str, local_path: str, gz: bool = False) -> None:
         None: This function downloads the file from S3 to the local path.
     """
     s3 = boto3.client("s3")
-
-    # Extract bucket name and key from the S3 path
-    def parse_s3_path(s3_path):
-        bucket, key = s3_path.removeprefix("s3://").split("/", 1)
-        return bucket, key
 
     bucket, key = parse_s3_path(s3_path)
 
@@ -657,6 +663,11 @@ def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
         None: This function uploads the local file to S3.
     """
 
+    if not is_safe_path(local_path):
+        raise ValueError(f"Unsafe local path: {local_path}")
+    if not is_safe_path(s3_path):
+        raise ValueError(f"Unsafe s3 path: {s3_path}")
+
     if s3_path.endswith(".gz") and not local_path.endswith(".gz"):
         gz = True
 
@@ -665,24 +676,26 @@ def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
             gz_path = f"{local_path}.gz"
             with open(local_path, "rb") as f_in, gzip.open(gz_path, "wb") as f_out:
                 f_out.write(f_in.read())
+            # use s3cmd for uploads due to issues with boto3 and large files
             cmd = [
                 "s3cmd",
                 "put",
                 "setacl",
                 "--acl-public",
-                shlex.quote(gz_path),
-                shlex.quote(s3_path),
+                gz_path,
+                s3_path,
             ]
             result = subprocess.run(cmd, capture_output=True, text=True)
             os.remove(gz_path)
         else:
+            # use s3cmd for uploads due to issues with boto3 and large files
             cmd = [
                 "s3cmd",
                 "put",
                 "setacl",
                 "--acl-public",
-                shlex.quote(local_path),
-                shlex.quote(s3_path),
+                local_path,
+                s3_path,
             ]
             result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
@@ -752,27 +765,35 @@ def last_modified_git_remote(http_path: str) -> Optional[str]:
     Returns:
         str: Last modified date of the file.
     """
-    project_path = http_path.removeprefix("https://gitlab.com/")
-    project_path = project_path.removesuffix(".git")
-    parts = project_path.split("/")
-    project = "%2F".join(parts[:2])
-    ref = parts[4]
-    file = "%2F".join(parts[5:]).split("?")[0]
-    project_path = project_path.replace("/", "%2F")
-    api_url = (
-        f"https://gitlab.com/api/v4/projects/{project}/repository/commits"
-        f"?ref_name={ref}&path={file}&per_page=1"
-    )
-    response = requests.get(api_url)
-    if response.status_code == 200:
-        if commits := response.json():
-            if committed_date := commits[0].get("committed_date", None):
-                dt = parser.isoparse(committed_date)
-                return int(dt.timestamp())
-    else:
-        response = requests.head(http_path, allow_redirects=True)
+    try:
+        if not http_path.startswith("https://gitlab.com/"):
+            print(f"Malformed GitLab URL (missing prefix): {http_path}")
+            return None
+        project_path = http_path.removeprefix("https://gitlab.com/")
+        project_path = project_path.removesuffix(".git")
+        parts = project_path.split("/")
+        if len(parts) < 6:
+            print(f"Malformed GitLab URL (not enough parts): {http_path}")
+            return None
+        project = "%2F".join(parts[:2])
+        ref = parts[4]
+        file = "%2F".join(parts[5:]).split("?")[0]
+        api_url = (
+            f"https://gitlab.com/api/v4/projects/{project}/repository/commits"
+            f"?ref_name={ref}&path={file}&per_page=1"
+        )
+        response = requests.get(api_url, timeout=300)
         if response.status_code == 200:
-            return response.headers.get("Last-Modified", None)
+            commits = response.json()
+            if commits and commits[0].get("committed_date"):
+                dt = parser.isoparse(commits[0]["committed_date"])
+                return int(dt.timestamp())
+        else:
+            response = requests.head(http_path, allow_redirects=True, timeout=300)
+            if response.status_code == 200:
+                return response.headers.get("Last-Modified", None)
+    except Exception as e:
+        print(f"Error parsing GitLab URL or fetching commit info: {e}")
     return None
 
 
@@ -788,7 +809,7 @@ def last_modified_http(http_path: str) -> Optional[str]:
     """
     if "gitlab.com" in http_path:
         return last_modified_git_remote(http_path)
-    response = requests.head(http_path, allow_redirects=True)
+    response = requests.head(http_path, allow_redirects=True, timeout=300)
     if response.status_code == 200:
         if last_modified := response.headers.get("Last-Modified", None):
             dt = parser.parse(last_modified)
@@ -809,11 +830,6 @@ def last_modified_s3(s3_path: str) -> Optional[str]:
     """
     s3 = boto3.client("s3")
 
-    # Extract bucket name and key from the S3 path
-    def parse_s3_path(s3_path):
-        bucket, key = s3_path.removeprefix("s3://").split("/", 1)
-        return bucket, key
-
     bucket, key = parse_s3_path(s3_path)
 
     # Return None if the remote file does not exist
@@ -825,7 +841,7 @@ def last_modified_s3(s3_path: str) -> Optional[str]:
         return None
 
 
-def last_modified(local_path: str) -> Optional[str]:
+def last_modified(local_path: str) -> Optional[int]:
     """
     Get the last modified date of a local file.
 
@@ -833,7 +849,8 @@ def last_modified(local_path: str) -> Optional[str]:
         local_path (str): Path to the local file.
 
     Returns:
-        str: Last modified date of the file.
+        Optional[int]: Last modified date of the file as a Unix timestamp, or None if
+            the file does not exist.
     """
     if not os.path.exists(local_path):
         return None

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-# sourcery skip: avoid-builtin-shadow
 import os
 import subprocess
 import sys
@@ -8,11 +7,12 @@ from os.path import abspath, dirname
 
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
+    # sourcery skip: avoid-builtin-shadow
     __package__ = "flows"
 
 from flows.lib.conditional_import import emit_event, flow, task
 from flows.lib.shared_args import OUTPUT_PATH, parse_args, required
-from flows.lib.utils import is_local_file_current_http
+from flows.lib.utils import is_local_file_current_http, is_safe_path
 
 
 @task(retries=2, retry_delay_seconds=2, log_prints=True)
@@ -34,6 +34,12 @@ def fetch_tolid_prefixes(
     Returns:
         bool: True if the fetched file matches the remote version, False otherwise.
     """
+
+    if not is_safe_path(local_path):
+        raise ValueError(f"Unsafe local path: {local_path}")
+    if not is_safe_path(http_path):
+        raise ValueError(f"Unsafe HTTP path: {http_path}")
+
     # create local_path if it doesn't exist
     os.makedirs(local_path, exist_ok=True)
     local_file = f"{local_path}/tolids.txt"

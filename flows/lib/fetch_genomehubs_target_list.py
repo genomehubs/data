@@ -52,7 +52,9 @@ def fetch_genomehubs_list_file(
 
     print(f"Fetching records from {url}")
     # Fetch the list of target records
-    response = requests.get(url, headers={"Accept": "text/tab-separated-values"})
+    response = requests.get(
+        url, headers={"Accept": "text/tab-separated-values"}, timeout=300
+    )
     response.raise_for_status()
     records = response.text
     # write records to file

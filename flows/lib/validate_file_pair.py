@@ -43,9 +43,14 @@ def validate_yaml_file(
     Returns:
         bool: True if the YAML file is valid, False otherwise.
     """
+    if not utils.is_safe_path(yaml_path):
+        raise ValueError(f"Unsafe YAML path: {yaml_path}")
+
     # Validate the YAML file using blobtk validate
     cmd = ["blobtk", "validate", "-g", yaml_path]
     if taxdump_path is not None:
+        if not utils.is_safe_path(taxdump_path):
+            raise ValueError(f"Unsafe taxdump path: {taxdump_path}")
         cmd.extend(
             [
                 "-t",

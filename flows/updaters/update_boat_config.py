@@ -26,10 +26,16 @@ from flows.lib.shared_args import (
     parse_args,
     required,
 )
-from flows.lib.utils import parse_tsv
+from flows.lib.utils import is_safe_path, parse_tsv
 
 
 def taxon_id_to_ssh_path(ssh_host, taxon_id, assembly_name):
+
+    if not is_safe_path(ssh_host):
+        raise ValueError(f"Unsafe ssh host: {ssh_host}")
+    if not is_safe_path(taxon_id):
+        raise ValueError(f"Unsafe taxon_id: {taxon_id}")
+
     command = [
         "ssh",
         ssh_host,
@@ -66,6 +72,10 @@ def taxon_id_to_ssh_path(ssh_host, taxon_id, assembly_name):
 
 def lookup_buscos(ssh_host, file_path):
     if "lustre" in file_path:
+        if not is_safe_path(ssh_host):
+            raise ValueError(f"Unsafe ssh host: {ssh_host}")
+        if not is_safe_path(file_path):
+            raise ValueError(f"Unsafe file path: {file_path}")
 
         command = [
             "ssh",
@@ -90,6 +100,12 @@ def assembly_id_to_busco_sets(alt_host, assembly_id):
     Fetch the alternative path for an assembly ID from the alt host.
     This function uses SSH to run a command on the alt host to get the path.
     """
+
+    if not is_safe_path(alt_host):
+        raise ValueError(f"Unsafe alt host: {alt_host}")
+    if not is_safe_path(assembly_id):
+        raise ValueError(f"Unsafe assembly_id: {assembly_id}")
+
     # find file on alt_host
     command = [
         "ssh",
@@ -115,7 +131,7 @@ def assembly_id_to_busco_sets(alt_host, assembly_id):
         busco_url = (
             f"https://busco.cog.sanger.ac.uk/{assembly_id}/{lineage}/full_table.tsv"
         )
-        response = requests.get(busco_url)
+        response = requests.get(busco_url, timeout=300)
         if response.status_code == 200:
             busco_sets.append(lineage)
     return f"https://busco.cog.sanger.ac.uk/{assembly_id}", busco_sets
@@ -186,7 +202,7 @@ def fetch_goat_results(root_taxid):
 
     # fetch query_url with accept header tsv. use python module requests
     headers = {"Accept": "text/tab-separated-values"}
-    response = requests.get(query_url, headers=headers)
+    response = requests.get(query_url, headers=headers, timeout=300)
     if response.status_code != 200:
         raise RuntimeError(
             f"Error fetching BoaT config info: {response.status_code} {response.text}"

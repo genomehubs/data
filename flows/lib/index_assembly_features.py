@@ -56,7 +56,7 @@ def list_busco_lineages(assembly_id: str, work_dir: str) -> list:
     )
     url = f"{goat_api}/search?{queryString}"
     # Fetch the list of BUSCO lineages
-    response = requests.get(url)
+    response = requests.get(url, timeout=300)
     response.raise_for_status()
     return [
         get_genomehubs_attribute_value(result, "odb10_lineage")
@@ -75,9 +75,9 @@ def find_busco_files(assembly_id, busco_lineages, work_dir, http_path):
         for path in busco_http_path:
             if busco_file := find_http_file(path, f"{lineage}/full_table.tsv"):
                 local_file = f"{busco_work_dir}/{lineage}_full_table.tsv"
-                requests.get(busco_file).content
+                requests.get(busco_file, timeout=300).content
                 with open(local_file, "wb") as file:
-                    file.write(requests.get(busco_file).content)
+                    file.write(requests.get(busco_file, timeout=300).content)
                 busco_files.append(local_file)
                 break
     return busco_files
@@ -87,7 +87,7 @@ def find_busco_files(assembly_id, busco_lineages, work_dir, http_path):
 def find_blobtoolkit_files(assembly_id, work_dir, http_path):
     blobtoolkit_api_url = "https://blobtoolkit.genomehubs.org/api/v1"
     blobtoolkit_search_url = f"{blobtoolkit_api_url}/search/{assembly_id}"
-    response = requests.get(blobtoolkit_search_url)
+    response = requests.get(blobtoolkit_search_url, timeout=300)
     response.raise_for_status()
     results = response.json()
     if not results:
@@ -107,7 +107,7 @@ def find_blobtoolkit_files(assembly_id, work_dir, http_path):
         return []
     # fetch the full dataset metadata
     blobtoolkit_metadata_url = f"{blobtoolkit_api_url}/dataset/id/{dataset_id}"
-    response = requests.get(blobtoolkit_metadata_url)
+    response = requests.get(blobtoolkit_metadata_url, timeout=300)
     response.raise_for_status()
     metadata = response.json()
     print(metadata)
@@ -132,8 +132,8 @@ def index_assembly_features(
     # if snapshot_exists(s3_path, assembly_id, "feature"):
     #     return taxon_id
     # find_files(assembly_id, work_dir, s3_path)
-    busco_lineages = list_busco_lineages(assembly_id, work_dir)
-    busco_files = find_busco_files(assembly_id, busco_lineages, work_dir, http_path)
+    # busco_lineages = list_busco_lineages(assembly_id, work_dir)
+    # busco_files = find_busco_files(assembly_id, busco_lineages, work_dir, http_path)
     blobtoolkit_files = find_blobtoolkit_files(assembly_id, work_dir, http_path)
     print(blobtoolkit_files)
 

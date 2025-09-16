@@ -7,11 +7,12 @@ from os.path import abspath, dirname
 
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
+    # sourcery skip: avoid-builtin-shadow
     __package__ = "flows"
 
 from flows.lib.conditional_import import emit_event, flow, task
 from flows.lib.shared_args import OUTPUT_PATH, parse_args, required
-from flows.lib.utils import generate_md5, is_local_file_current_http
+from flows.lib.utils import generate_md5, is_local_file_current_http, is_safe_path
 
 
 @task(retries=2, retry_delay_seconds=2, log_prints=True)
@@ -30,6 +31,10 @@ def fetch_ncbi_taxonomy(
         bool: True if the fetched file matches the remote version, False otherwise.
     """
     # create local_path if it doesn't exist
+    if not is_safe_path(local_path):
+        raise ValueError(f"Unsafe local path: {local_path}")
+    if not is_safe_path(http_path):
+        raise ValueError(f"Unsafe HTTP path: {http_path}")
     os.makedirs(local_path, exist_ok=True)
     local_gz_file = f"{local_path}/taxdump.tar.gz"
     # Fetch the remote file
@@ -120,4 +125,5 @@ if __name__ == "__main__":
         "Fetch NCBI taxdump.",
     )
 
+    update_ncbi_taxonomy(**vars(args))
     update_ncbi_taxonomy(**vars(args))

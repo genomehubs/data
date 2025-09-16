@@ -53,6 +53,8 @@ def fetch_ncbi_datasets_sequences(
     Yields:
         dict: The sequence report data as a JSON object, one line at a time.
     """
+    if not utils.is_safe_path(accession):
+        raise ValueError(f"Unsafe accession: {accession}")
     result = subprocess.run(
         [
             "datasets",

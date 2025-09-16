@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
+    # sourcery skip: avoid-builtin-shadow
     __package__ = "flows"
 
 from flows.lib.conditional_import import emit_event, flow, task

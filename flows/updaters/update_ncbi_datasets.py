@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError
 
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
+    # sourcery skip: avoid-builtin-shadow
     __package__ = "flows"
 
 from flows.lib.conditional_import import emit_event, flow, task
@@ -76,6 +77,8 @@ def fetch_ncbi_datasets_summary(
             "42452",
         ]
     for taxid in taxids:
+        if not taxid.isdigit():
+            raise ValueError(f"Invalid taxid: {taxid}")
         # datasets summary for the root taxID
         command = [
             "datasets",

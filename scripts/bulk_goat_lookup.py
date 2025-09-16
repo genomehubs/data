@@ -91,7 +91,7 @@ def main():
                 f"&ranks={args.ranks.replace(',', '%2C')}"
             )
             response = requests.get(
-                api_url, headers={"Accept": "text/tab-separated-values"}
+                api_url, headers={"Accept": "text/tab-separated-values"}, timeout=300
             )
             if response.status_code == 200:
                 parse_results(
