@@ -154,7 +154,7 @@ deployments:
       # Local path to save the GenomeHubs taxonomy JSONL file
       output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota/nodes.jsonl"
       # The S3 path to save the GenomeHubs taxonomy JSONL file
-      s3_path: "s3://goat/resources/taxonomy/genomehubs/eukaryota-nodes.jsonl.gz"
+      s3_path: "s3://goat/resources/taxonomy/genomehubs/eukaryota/nodes.jsonl.gz"
     triggers:
       - enabled: true
         match:
@@ -164,6 +164,6 @@ deployments:
         parameters:
           root_taxid: "2759"
           input_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota-taxonomy-input.yaml"
-          output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/genomehubs-taxonomy-eukaryota.jsonl"
-          s3_path: "s3://goat/resources/taxonomy/genomehubs/genomehubs-taxonomy-eukaryota.jsonl.gz"
+          output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/genomehubs-taxonomy/eukaryota.jsonl"
+          s3_path: "s3://goat/resources/taxonomy/genomehubs/genomehubs-taxonomy/eukaryota.jsonl.gz"
     work_pool: *goat_data_work_pool
