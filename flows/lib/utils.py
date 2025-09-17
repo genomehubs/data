@@ -5,13 +5,13 @@ import gzip
 import hashlib
 import os
 import re
+import shlex
 import shutil
 import subprocess
 from argparse import Action
 from csv import DictReader, Sniffer
 from datetime import datetime
 from io import StringIO
-from shlex import shlex
 from typing import Dict, List, Optional
 
 import boto3
