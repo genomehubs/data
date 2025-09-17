@@ -549,8 +549,13 @@ def enum_action(enum_class):
     return EnumAction
 
 
-def safe_get(*args, timeout=300, **kwargs):
-    return requests.get(*args, timeout=timeout, **kwargs)
+def safe_get(*args, method="GET", timeout=300, **kwargs):
+    if method == "GET":
+        return requests.get(*args, timeout=timeout, **kwargs)
+    elif method == "POST":
+        return requests.post(*args, timeout=timeout, **kwargs)
+    elif method == "HEAD":
+        return requests.head(*args, timeout=timeout, **kwargs)
 
 
 def find_http_file(http_path: str, filename: str) -> str:
