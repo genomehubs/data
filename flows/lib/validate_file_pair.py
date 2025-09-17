@@ -59,6 +59,7 @@ def validate_yaml_file(
         )
 
     # Run the command with subprocess run and capture stdout
+    # Inputs have been validated by is_safe_path; safe to use in subprocess
     result = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
     status = result.returncode == 0
     output = result.stdout

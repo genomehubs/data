@@ -37,6 +37,7 @@ def fetch_tolid_prefixes(
     # Fetch the remote file
     cmd = ["curl", "-sSL", http_path, "-o", local_file]
     print(f"Running command: {' '.join(cmd)}")
+    # Inputs have been validated by is_safe_path; safe to use in subprocess
     subprocess.run(cmd, check=True)
 
     # check the number of lines in the file

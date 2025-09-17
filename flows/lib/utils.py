@@ -687,6 +687,7 @@ def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
                 gz_path,
                 s3_path,
             ]
+            # Inputs have been validated by is_safe_path; safe to use in subprocess
             result = subprocess.run(cmd, capture_output=True, text=True)
             os.remove(gz_path)
         else:
@@ -698,6 +699,7 @@ def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
                 local_path,
                 s3_path,
             ]
+            # Inputs have been validated by is_safe_path; safe to use in subprocess
             result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             print(

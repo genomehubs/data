@@ -31,12 +31,14 @@ def fetch_ncbi_taxonomy(
     # Fetch the remote file
     cmd = ["curl", "-sSL", http_path, "-o", local_gz_file]
     print(f"Running command: {' '.join(cmd)}")
+    # Inputs have been validated by is_safe_path; safe to use in subprocess
     subprocess.run(cmd, check=True)
 
     remote_md5_path = f"{http_path}.md5"
     # Fetch the remote MD5 checksum
     cmd = ["curl", "-sSL", remote_md5_path]
     print(f"Running command: {' '.join(cmd)}")
+    # Inputs have been validated by is_safe_path; safe to use in subprocess
     result = subprocess.run(cmd, check=True, capture_output=True, text=True)
     remote_md5 = result.stdout.split()[0]
 
@@ -51,6 +53,7 @@ def fetch_ncbi_taxonomy(
     # extract the tar.gz file
     cmd = ["tar", "-xzf", local_gz_file, "-C", local_path]
     print(f"Running command: {' '.join(cmd)}")
+    # Inputs have been validated by is_safe_path; safe to use in subprocess
     subprocess.run(cmd, check=True)
 
     # set the timestamp of extracted files to match the tar.gz file

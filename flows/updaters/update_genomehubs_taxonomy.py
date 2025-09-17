@@ -71,6 +71,7 @@ def run_blobtk_taxonomy(root_taxid: str, input_path: str, output_path: str) -> N
     ]
     print(f"Running command: {' '.join(cmd)}")
     try:
+        # Inputs have been validated by is_safe_path; safe to use in subprocess
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
