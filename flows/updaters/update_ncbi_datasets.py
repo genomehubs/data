@@ -1,6 +1,5 @@
 import hashlib
 import os
-import subprocess
 
 import boto3
 from botocore.exceptions import ClientError
@@ -14,6 +13,7 @@ from flows.lib.shared_args import (
     parse_args,
     required,
 )
+from flows.lib.utils import run_quoted
 
 
 @task(retries=2, retry_delay_seconds=2, log_prints=True)
@@ -79,7 +79,7 @@ def fetch_ncbi_datasets_summary(
             taxid,
             "--as-json-lines",
         ]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = run_quoted(command, capture_output=True, text=True)
         if result.returncode != 0:
             if (
                 "V2reportsRankType" in result.stderr

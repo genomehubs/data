@@ -220,4 +220,3 @@ def sts_row_handler(result_count, fieldnames, token, **kwargs):
             result.extend(d)
 
     return result
-    return result

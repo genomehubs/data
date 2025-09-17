@@ -64,4 +64,3 @@ if __name__ == "__main__":
     """Run the flow."""
     args = parse_args("Parse assembly data from a BlobToolKit BlobDir.")
     parse_blobtoolkit_assembly_data(**vars(args))
-    parse_blobtoolkit_assembly_data(**vars(args))

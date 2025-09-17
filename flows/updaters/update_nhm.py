@@ -63,4 +63,3 @@ if __name__ == "__main__":
     )
 
     update_nhm(**vars(args))
-    update_nhm(**vars(args))

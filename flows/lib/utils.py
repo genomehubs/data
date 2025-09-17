@@ -11,6 +11,7 @@ from argparse import Action
 from csv import DictReader, Sniffer
 from datetime import datetime
 from io import StringIO
+from shlex import shlex
 from typing import Dict, List, Optional
 
 import boto3
@@ -613,8 +614,25 @@ def is_safe_path(path: str) -> bool:
     # and absolute paths.
     # Tilde (~) and absolute paths are allowed because this function is only used
     # with trusted internal input.
-    # Directory traversal ('..') is still blocked.
-    return ".." not in path if re.match(r"^[\w\-/.:~]+$", path) else False
+    # Directory traversal ('..') is blocked.
+    # Allow URLs (e.g., http://, https://, s3://) and URL-safe characters
+    # URL-safe: alphanumeric, dash, underscore, dot, slash, colon, tilde, percent,
+    #           question, ampersand, equals
+    url_pattern = r"^[\w]+://"
+    url_safe_pattern = r"^[\w\-/.:~%?&=]+$"
+    if re.match(url_pattern, path):
+        return ".." not in path and re.match(url_safe_pattern, path)
+    return ".." not in path if re.match(url_safe_pattern, path) else False
+
+
+def run_quoted(cmd, **kwargs):
+    quoted_cmd = [shlex.quote(str(arg)) for arg in cmd]
+    return subprocess.run(quoted_cmd, **kwargs)
+
+
+def popen_quoted(cmd, **kwargs):
+    quoted_cmd = [shlex.quote(str(arg)) for arg in cmd]
+    return subprocess.Popen(quoted_cmd, **kwargs)
 
 
 def parse_s3_path(s3_path):
@@ -684,17 +702,31 @@ def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
             gz_path = f"{local_path}.gz"
             with open(local_path, "rb") as f_in, gzip.open(gz_path, "wb") as f_out:
                 f_out.write(f_in.read())
-            # use s3cmd for uploads due to issues with boto3 and large files
-            cmd = [
-                "s3cmd",
-                "put",
-                "--acl-public",
-                gz_path,
-                s3_path,
-            ]
-            # Inputs have been validated by is_safe_path; safe to use in subprocess
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            os.remove(gz_path)
+            try:
+                # use s3cmd for uploads due to issues with boto3 and large files
+                cmd = [
+                    "s3cmd",
+                    "put",
+                    "--acl-public",
+                    gz_path,
+                    s3_path,
+                ]
+                result = run_quoted(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode != 0:
+                    print(
+                        (
+                            f"Error uploading {local_path} to {s3_path} "
+                            f"with s3cmd: {result.stderr}"
+                        )
+                    )
+                    raise RuntimeError(f"s3cmd upload failed: {result.stderr}")
+            finally:
+                if os.path.exists(gz_path):
+                    os.remove(gz_path)
         else:
             # use s3cmd for uploads due to issues with boto3 and large files
             cmd = [
@@ -704,13 +736,15 @@ def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
                 local_path,
                 s3_path,
             ]
-            # Inputs have been validated by is_safe_path; safe to use in subprocess
-            result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(
-                f"Error uploading {local_path} to {s3_path} with s3cmd: {result.stderr}"
-            )
-            raise RuntimeError(f"s3cmd upload failed: {result.stderr}")
+            result = run_quoted(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                print(
+                    (
+                        f"Error uploading {local_path} to {s3_path} "
+                        f"with s3cmd: {result.stderr}"
+                    )
+                )
+                raise RuntimeError(f"s3cmd upload failed: {result.stderr}")
     except Exception as e:
         print(f"Error uploading {local_path} to {s3_path}: {e}")
         raise e

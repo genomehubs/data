@@ -1,9 +1,8 @@
 import os
-import subprocess
 
 from flows.lib.conditional_import import emit_event, flow, task
 from flows.lib.shared_args import OUTPUT_PATH, parse_args, required
-from flows.lib.utils import is_local_file_current_http, is_safe_path
+from flows.lib.utils import is_local_file_current_http, is_safe_path, run_quoted
 
 
 @task(retries=2, retry_delay_seconds=2, log_prints=True)
@@ -37,8 +36,7 @@ def fetch_tolid_prefixes(
     # Fetch the remote file
     cmd = ["curl", "-sSL", http_path, "-o", local_file]
     print(f"Running command: {' '.join(cmd)}")
-    # Inputs have been validated by is_safe_path; safe to use in subprocess
-    subprocess.run(cmd, check=True)
+    run_quoted(cmd, check=True)
 
     # check the number of lines in the file
     with open(local_file, "r") as f:

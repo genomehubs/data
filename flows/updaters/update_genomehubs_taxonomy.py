@@ -14,7 +14,7 @@ from flows.lib.shared_args import (
     parse_args,
     required,
 )
-from flows.lib.utils import fetch_from_s3, is_safe_path, upload_to_s3
+from flows.lib.utils import fetch_from_s3, is_safe_path, popen_quoted, upload_to_s3
 
 
 def get_file_paths_from_config(config: dict, file_paths: dict) -> dict:
@@ -72,7 +72,7 @@ def run_blobtk_taxonomy(root_taxid: str, input_path: str, output_path: str) -> N
     print(f"Running command: {' '.join(cmd)}")
     try:
         # Inputs have been validated by is_safe_path; safe to use in subprocess
-        process = subprocess.Popen(
+        process = popen_quoted(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

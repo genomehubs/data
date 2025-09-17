@@ -1,6 +1,5 @@
 import hashlib
 import os
-import subprocess
 
 import boto3
 from botocore.exceptions import ClientError
@@ -15,7 +14,7 @@ from flows.lib.shared_args import (
     parse_args,
     required,
 )
-from flows.lib.utils import is_safe_path, parse_tsv, safe_get
+from flows.lib.utils import is_safe_path, parse_tsv, run_quoted, safe_get
 
 
 def taxon_id_to_ssh_path(ssh_host, taxon_id, assembly_name):
@@ -35,7 +34,7 @@ def taxon_id_to_ssh_path(ssh_host, taxon_id, assembly_name):
             f"speciesops getdir --taxon_id {taxon_id}'"
         ),
     ]
-    result = subprocess.run(command, capture_output=True, text=True)
+    result = run_quoted(command, capture_output=True, text=True)
     if result.returncode != 0:
         print(
             (
@@ -73,7 +72,7 @@ def lookup_buscos(ssh_host, file_path):
             "-c",
             (f"'ls -d {file_path}/*_odb*/'"),
         ]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = run_quoted(command, capture_output=True, text=True)
         if result.returncode != 0:
             return []
         busco_dirs = [
@@ -103,7 +102,7 @@ def assembly_id_to_busco_sets(alt_host, assembly_id):
         "-c",
         f"'ls /volumes/data/by_accession/{assembly_id}'",
     ]
-    result = subprocess.run(command, capture_output=True, text=True)
+    result = run_quoted(command, capture_output=True, text=True)
     if result.returncode == 0:
         return f"/volumes/data/by_accession/{assembly_id}", result.stdout.splitlines()
 

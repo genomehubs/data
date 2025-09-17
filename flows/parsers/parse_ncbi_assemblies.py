@@ -46,7 +46,7 @@ def fetch_ncbi_datasets_sequences(
     """
     if not utils.is_safe_path(accession):
         raise ValueError(f"Unsafe accession: {accession}")
-    result = subprocess.run(
+    result = utils.run_quoted(
         [
             "datasets",
             "summary",
