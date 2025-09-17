@@ -1,20 +1,11 @@
-#!/usr/bin/env python3
-
-# sourcery skip: avoid-builtin-shadow
 import json
 import os
 import subprocess
-import sys
 from collections import defaultdict
 from glob import glob
-from os.path import abspath, dirname
 from typing import Generator, Optional
 
 from genomehubs import utils as gh_utils
-
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    __package__ = "flows"
 
 from flows.lib import utils  # noqa: E402
 from flows.lib.conditional_import import flow, run_count, task  # noqa: E402
@@ -53,7 +44,9 @@ def fetch_ncbi_datasets_sequences(
     Yields:
         dict: The sequence report data as a JSON object, one line at a time.
     """
-    result = subprocess.run(
+    if not utils.is_safe_path(accession):
+        raise ValueError(f"Unsafe accession: {accession}")
+    result = utils.run_quoted(
         [
             "datasets",
             "summary",
@@ -74,6 +67,28 @@ def fetch_ncbi_datasets_sequences(
         if not line:
             continue
         yield json.loads(line)
+
+
+def is_atypical_assembly(report: dict, parsed: dict) -> bool:
+    """
+    Check if an assembly is atypical.
+
+    Args:
+        report (dict): A dictionary containing the assembly information.
+        parsed (dict): A dictionary containing parsed data.
+
+    Returns:
+        bool: True if the assembly is atypical, False otherwise.
+    """
+    if "assemblyInfo" not in report:
+        return True
+    if report["assemblyInfo"].get("atypical", {}).get("isAtypical", False):
+        # delete from parsed if present
+        accession = report["accession"]
+        if accession in parsed:
+            del parsed[accession]
+        return True
+    return False
 
 
 def process_assembly_report(
@@ -98,6 +113,9 @@ def process_assembly_report(
     Returns:
         dict: The updated report dictionary.
     """
+    # Uncomment to filter atypical assemblies
+    # if is_atypical_assembly(report, parsed):
+    #     return None
     processed_report = {**report, "processedAssemblyInfo": {"organelle": "nucleus"}}
     if "pairedAccession" in report:
         if processed_report["pairedAccession"].startswith("GCF_"):
@@ -215,6 +233,8 @@ def add_report_to_parsed_reports(
                 continue
             linked_row = parsed[acc]
             if accession not in linked_row["linkedAssembly"]:
+                if not isinstance(linked_row["linkedAssembly"], list):
+                    linked_row["linkedAssembly"] = []
                 linked_row["linkedAssembly"].append(accession)
             if acc not in row["linkedAssembly"]:
                 row["linkedAssembly"].append(acc)
@@ -336,7 +356,9 @@ def process_assembly_reports(
             processed_report = process_assembly_report(
                 report, previous_report, config, parsed
             )
-            if use_previous_report(processed_report, parsed, config):
+            if processed_report is None or use_previous_report(
+                processed_report, parsed, config
+            ):
                 continue
             fetch_and_parse_sequence_report(processed_report)
             append_features(processed_report, config)
@@ -345,7 +367,11 @@ def process_assembly_reports(
                 previous_report = processed_report
         except Exception as e:
             print(
-                f"Error processing report for {report.get('accession', 'unknown')}: {e}"
+                (
+                    f"Error processing report for "
+                    f"{report.get('accession', 'unknown')}: "
+                    f"{e} (line {e.__traceback__.tb_lineno})"
+                )
             )
             continue
 

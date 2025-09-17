@@ -1,9 +1,6 @@
-#!/usr/bin/env python3
-
 import os
 from urllib.parse import urlencode
 
-import requests
 from conditional_import import emit_event, flow, task
 from shared_args import (
     API_URL,
@@ -14,6 +11,8 @@ from shared_args import (
     default,
     parse_args,
 )
+
+from flows.lib.utils import safe_get
 
 
 @task()
@@ -52,7 +51,7 @@ def fetch_genomehubs_list_file(
 
     print(f"Fetching records from {url}")
     # Fetch the list of target records
-    response = requests.get(url, headers={"Accept": "text/tab-separated-values"})
+    response = safe_get(url, headers={"Accept": "text/tab-separated-values"})
     response.raise_for_status()
     records = response.text
     # write records to file
@@ -123,4 +122,5 @@ if __name__ == "__main__":
         "Fetch a target list from a GenomeHubs site.",
     )
 
+    fetch_genomehubs_target_list(**vars(args))
     fetch_genomehubs_target_list(**vars(args))

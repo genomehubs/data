@@ -1,17 +1,8 @@
-#!/usr/bin/env python3
-
 import hashlib
 import os
-import subprocess
-import sys
-from os.path import abspath, dirname
 
 import boto3
 from botocore.exceptions import ClientError
-
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    __package__ = "flows"
 
 from flows.lib.conditional_import import emit_event, flow, task
 from flows.lib.shared_args import (
@@ -22,6 +13,7 @@ from flows.lib.shared_args import (
     parse_args,
     required,
 )
+from flows.lib.utils import run_quoted
 
 
 @task(retries=2, retry_delay_seconds=2, log_prints=True)
@@ -76,6 +68,8 @@ def fetch_ncbi_datasets_summary(
             "42452",
         ]
     for taxid in taxids:
+        if not taxid.isdigit():
+            raise ValueError(f"Invalid taxid: {taxid}")
         # datasets summary for the root taxID
         command = [
             "datasets",
@@ -85,7 +79,7 @@ def fetch_ncbi_datasets_summary(
             taxid,
             "--as-json-lines",
         ]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = run_quoted(command, capture_output=True, text=True)
         if result.returncode != 0:
             if (
                 "V2reportsRankType" in result.stderr

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import os
 
 from conditional_import import NO_CACHE, task

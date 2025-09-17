@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import json
 import os
 import shutil
@@ -43,9 +41,14 @@ def validate_yaml_file(
     Returns:
         bool: True if the YAML file is valid, False otherwise.
     """
+    if not utils.is_safe_path(yaml_path):
+        raise ValueError(f"Unsafe YAML path: {yaml_path}")
+
     # Validate the YAML file using blobtk validate
     cmd = ["blobtk", "validate", "-g", yaml_path]
     if taxdump_path is not None:
+        if not utils.is_safe_path(taxdump_path):
+            raise ValueError(f"Unsafe taxdump path: {taxdump_path}")
         cmd.extend(
             [
                 "-t",
@@ -56,7 +59,7 @@ def validate_yaml_file(
         )
 
     # Run the command with subprocess run and capture stdout
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
+    result = utils.run_quoted(cmd, stdout=subprocess.PIPE, text=True)
     status = result.returncode == 0
     output = result.stdout
     sys.stdout.write(output)
