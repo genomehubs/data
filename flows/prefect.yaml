@@ -17,7 +17,7 @@ pull:
       # Pull the genomehubs/data repository to get the latest flows
       id: clone-data
       repository: https://github.com/genomehubs/data.git
-      branch: main
+      branch: feature/pipeline-updates
 
 definitions:
   work_pools:

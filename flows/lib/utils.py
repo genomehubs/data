@@ -605,11 +605,12 @@ def find_s3_file(s3_path: list, filename: str) -> str:
 
 
 def is_safe_path(path: str) -> bool:
-    # Only allow alphanumeric, dash, underscore, dot, slash, and colon (for s3)
-    # Disallow '..', absolute paths, and directory traversal
-    if not re.match(r"^[\w\-/.:]+$", path):
-        return False
-    return ".." not in path and not path.startswith("/") and not path.startswith("~")
+    # Only allow alphanumeric, dash, underscore, dot, slash, colon (for s3), tilde,
+    # and absolute paths.
+    # Tilde (~) and absolute paths are allowed because this function is only used
+    # with trusted internal input.
+    # Directory traversal ('..') is still blocked.
+    return ".." not in path if re.match(r"^[\w\-/.:~]+$", path) else False
 
 
 def parse_s3_path(s3_path):
