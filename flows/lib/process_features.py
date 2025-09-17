@@ -1,13 +1,7 @@
-import sys
 from enum import Enum
-from os.path import abspath, dirname
 
 from shared_args import WORK_DIR, YAML_PATH, parse_args, required
 from utils import enum_action
-
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    __package__ = "flows"
 
 from flows.feature_parsers.register import register_plugins  # noqa: E402
 

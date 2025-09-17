@@ -1,10 +1,5 @@
-#!/usr/bin/env python3
-
-# sourcery skip: avoid-builtin-shadow
 import os
-import sys
 from enum import Enum
-from os.path import abspath, dirname
 from typing import Optional
 
 from conditional_import import flow
@@ -23,10 +18,6 @@ from shared_args import (
 )
 from utils import enum_action
 from validate_file_pair import validate_file_pair
-
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    __package__ = "flows"
 
 from flows.parsers.register import register_plugins  # noqa: E402
 

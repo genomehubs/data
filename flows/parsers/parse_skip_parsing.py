@@ -1,13 +1,4 @@
-#!/usr/bin/env python3
-
-# sourcery skip: avoid-builtin-shadow
 import os
-import sys
-from os.path import abspath, dirname
-
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    __package__ = "flows"
 
 from flows.lib.conditional_import import flow, task  # noqa: E402
 from flows.lib.shared_tasks import get_filenames  # noqa: E402

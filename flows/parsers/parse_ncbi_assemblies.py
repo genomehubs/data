@@ -1,20 +1,11 @@
-#!/usr/bin/env python3
-
-# sourcery skip: avoid-builtin-shadow
 import json
 import os
 import subprocess
-import sys
 from collections import defaultdict
 from glob import glob
-from os.path import abspath, dirname
 from typing import Generator, Optional
 
 from genomehubs import utils as gh_utils
-
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    __package__ = "flows"
 
 from flows.lib import utils  # noqa: E402
 from flows.lib.conditional_import import flow, run_count, task  # noqa: E402

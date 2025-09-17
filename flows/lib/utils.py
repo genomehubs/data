@@ -606,7 +606,10 @@ def find_s3_file(s3_path: list, filename: str) -> str:
 
 def is_safe_path(path: str) -> bool:
     # Only allow alphanumeric, dash, underscore, dot, slash, and colon (for s3)
-    return bool(re.match(r"^[\w\-/.:]+$", path))
+    # Disallow '..', absolute paths, and directory traversal
+    if not re.match(r"^[\w\-/.:]+$", path):
+        return False
+    return ".." not in path and not path.startswith("/") and not path.startswith("~")
 
 
 def parse_s3_path(s3_path):
@@ -680,7 +683,6 @@ def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
             cmd = [
                 "s3cmd",
                 "put",
-                "setacl",
                 "--acl-public",
                 gz_path,
                 s3_path,
@@ -692,7 +694,6 @@ def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
             cmd = [
                 "s3cmd",
                 "put",
-                "setacl",
                 "--acl-public",
                 local_path,
                 s3_path,
@@ -755,7 +756,7 @@ def parse_tsv(text: str) -> List[Dict[str, str]]:
     return list(reader)
 
 
-def last_modified_git_remote(http_path: str) -> Optional[str]:
+def last_modified_git_remote(http_path: str) -> Optional[int]:
     """
     Get the last modified date of a file in a git repository.
 
@@ -763,7 +764,7 @@ def last_modified_git_remote(http_path: str) -> Optional[str]:
         http_path (str): Path to the HTTP file.
 
     Returns:
-        str: Last modified date of the file.
+        Optional[int]: Last modified date of the file, or None if not found.
     """
     try:
         if not http_path.startswith("https://gitlab.com/"):
@@ -791,13 +792,16 @@ def last_modified_git_remote(http_path: str) -> Optional[str]:
         else:
             response = requests.head(http_path, allow_redirects=True, timeout=300)
             if response.status_code == 200:
-                return response.headers.get("Last-Modified", None)
+                if last_modified := response.headers.get("Last-Modified", None):
+                    dt = parser.parse(last_modified)
+                    return int(dt.timestamp())
+                return None
     except Exception as e:
         print(f"Error parsing GitLab URL or fetching commit info: {e}")
     return None
 
 
-def last_modified_http(http_path: str) -> Optional[str]:
+def last_modified_http(http_path: str) -> Optional[int]:
     """
     Get the last modified date of a file.
 
@@ -805,7 +809,7 @@ def last_modified_http(http_path: str) -> Optional[str]:
         http_path (str): Path to the HTTP file.
 
     Returns:
-        str: Last modified date of the file.
+        Optional[int]: Last modified date of the file, or None if not found.
     """
     if "gitlab.com" in http_path:
         return last_modified_git_remote(http_path)
@@ -818,7 +822,7 @@ def last_modified_http(http_path: str) -> Optional[str]:
     return None
 
 
-def last_modified_s3(s3_path: str) -> Optional[str]:
+def last_modified_s3(s3_path: str) -> Optional[int]:
     """
     Get the last modified date of a file on S3.
 
@@ -826,7 +830,7 @@ def last_modified_s3(s3_path: str) -> Optional[str]:
         s3_path (str): Path to the remote file on s3.
 
     Returns:
-        str: Last modified date of the file.
+        Optional[int]: Last modified date of the file, or None if not found.
     """
     s3 = boto3.client("s3")
 

@@ -1,16 +1,6 @@
-#!/usr/bin/env python3
-
+import json
 import os
 import subprocess
-import sys
-from os.path import abspath, dirname
-
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    # sourcery skip: avoid-builtin-shadow
-    __package__ = "flows"
-
-import json
 
 from flows.lib.conditional_import import emit_event, flow, task
 from flows.lib.shared_args import OUTPUT_PATH, parse_args, required

@@ -1,18 +1,6 @@
-#!/usr/bin/env python3
-
-# sourcery skip: avoid-builtin-shadow
 import os
-import sys
 from glob import glob
-from os.path import abspath, dirname
 
-# from genomehubs import utils as gh_utils
-
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    __package__ = "flows"
-
-# from flows.lib import utils  # noqa: E402
 from flows.lib.conditional_import import flow  # noqa: E402
 from flows.lib.utils import Parser  # noqa: E402
 from flows.parsers.args import parse_args  # noqa: E402
@@ -75,4 +63,5 @@ def plugin():
 if __name__ == "__main__":
     """Run the flow."""
     args = parse_args("Parse assembly data from a BlobToolKit BlobDir.")
+    parse_blobtoolkit_assembly_data(**vars(args))
     parse_blobtoolkit_assembly_data(**vars(args))

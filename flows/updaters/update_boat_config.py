@@ -1,21 +1,11 @@
-#!/usr/bin/env python3
-
-# sourcery skip: avoid-builtin-shadow
 import hashlib
 import os
 import subprocess
-import sys
-from os.path import abspath, dirname
 
 import boto3
 import requests
 from botocore.exceptions import ClientError
 
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    __package__ = "flows"
-
-# from flows.lib.conditional_import import emit_event, flow, task
 from flows.lib.conditional_import import flow, task
 from flows.lib.shared_args import (
     APPEND,

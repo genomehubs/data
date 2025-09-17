@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from typing import Generator
 
 from conditional_import import flow
