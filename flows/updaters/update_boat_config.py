@@ -3,7 +3,6 @@ import os
 import subprocess
 
 import boto3
-import requests
 from botocore.exceptions import ClientError
 
 from flows.lib.conditional_import import flow, task
@@ -16,7 +15,7 @@ from flows.lib.shared_args import (
     parse_args,
     required,
 )
-from flows.lib.utils import is_safe_path, parse_tsv
+from flows.lib.utils import is_safe_path, parse_tsv, safe_get
 
 
 def taxon_id_to_ssh_path(ssh_host, taxon_id, assembly_name):
@@ -121,7 +120,7 @@ def assembly_id_to_busco_sets(alt_host, assembly_id):
         busco_url = (
             f"https://busco.cog.sanger.ac.uk/{assembly_id}/{lineage}/full_table.tsv"
         )
-        response = requests.get(busco_url, timeout=300)
+        response = safe_get(busco_url)
         if response.status_code == 200:
             busco_sets.append(lineage)
     return f"https://busco.cog.sanger.ac.uk/{assembly_id}", busco_sets
@@ -192,7 +191,7 @@ def fetch_goat_results(root_taxid):
 
     # fetch query_url with accept header tsv. use python module requests
     headers = {"Accept": "text/tab-separated-values"}
-    response = requests.get(query_url, headers=headers, timeout=300)
+    response = safe_get(query_url, headers=headers)
     if response.status_code != 200:
         raise RuntimeError(
             f"Error fetching BoaT config info: {response.status_code} {response.text}"

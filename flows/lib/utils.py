@@ -548,6 +548,10 @@ def enum_action(enum_class):
     return EnumAction
 
 
+def safe_get(*args, timeout=300, **kwargs):
+    return requests.get(*args, timeout=timeout, **kwargs)
+
+
 def find_http_file(http_path: str, filename: str) -> str:
     """
     Find files for the record ID.
@@ -559,7 +563,7 @@ def find_http_file(http_path: str, filename: str) -> str:
     Returns:
         str: Path to the file.
     """
-    response = requests.get(f"{http_path}/{filename}", timeout=300)
+    response = safe_get(f"{http_path}/{filename}")
     return f"{http_path}/{filename}" if response.status_code == 200 else None
 
 
@@ -786,14 +790,14 @@ def last_modified_git_remote(http_path: str) -> Optional[int]:
             f"https://gitlab.com/api/v4/projects/{project}/repository/commits"
             f"?ref_name={ref}&path={file}&per_page=1"
         )
-        response = requests.get(api_url, timeout=300)
+        response = safe_get(api_url)
         if response.status_code == 200:
             commits = response.json()
             if commits and commits[0].get("committed_date"):
                 dt = parser.isoparse(commits[0]["committed_date"])
                 return int(dt.timestamp())
         else:
-            response = requests.head(http_path, allow_redirects=True, timeout=300)
+            response = safe_get(http_path, method="HEAD", allow_redirects=True)
             if response.status_code == 200:
                 if last_modified := response.headers.get("Last-Modified", None):
                     dt = parser.parse(last_modified)
@@ -816,7 +820,7 @@ def last_modified_http(http_path: str) -> Optional[int]:
     """
     if "gitlab.com" in http_path:
         return last_modified_git_remote(http_path)
-    response = requests.head(http_path, allow_redirects=True, timeout=300)
+    response = safe_get(http_path, method="HEAD", allow_redirects=True)
     if response.status_code == 200:
         if last_modified := response.headers.get("Last-Modified", None):
             dt = parser.parse(last_modified)
