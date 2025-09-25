@@ -174,7 +174,7 @@ deployments:
     entrypoint: flows/updaters/update_ncbi_datasets.py:update_ncbi_datasets
     parameters:
       output_path: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}/vgp_phase1.jsonl"
-      s3_path: s3://goat/resources/data-freeezes/vgp_phase1.jsonl
+      s3_path: s3://goat/resources/data-freeezes/vgp_phase1.jsonl.gz
       data_freeze_path: "s3://goat/resources/data-freezes/vgp_phase1_list_data_freeze.tsv"
     work_pool: *goat_data_work_pool
 
