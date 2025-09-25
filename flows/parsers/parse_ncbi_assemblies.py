@@ -10,7 +10,7 @@ from genomehubs import utils as gh_utils
 
 from flows.lib import utils  # noqa: E402
 from flows.lib.conditional_import import flow, run_count, task  # noqa: E402
-from flows.lib.utils import Config, Parser  # noqa: E402
+from flows.lib.utils import Config, Parser, parse_s3_file  # noqa: E402
 from flows.parsers.args import parse_args  # noqa: E402
 
 
@@ -379,10 +379,10 @@ def process_assembly_reports(
 
 
 @task(log_prints=True)
-def fetch_data_freeze_file(data_freeze_path: str) -> dict:
+def parse_data_freeze_file(data_freeze_path: str) -> dict:
     """
-    Fetch a 2-column TSV with the data freeze list of assemblies and their respective
-    status from the given S3 path.
+    Fetch and parse a 2-column TSV with the data freeze list of assemblies and their
+    respective status from the given S3 path.
 
     Args:
         data_freeze_path (str): The S3 path to the data freeze list TSV file.
@@ -390,21 +390,10 @@ def fetch_data_freeze_file(data_freeze_path: str) -> dict:
         dict: A dictionary mapping assembly accessions to their freeze subsets.
 
     """
-    # from s3 to tmporary file
+    # from s3 to temporary file
     print(f"Fetching data freeze file from {data_freeze_path}")
-    # local_path = "../vgp_phase1_data_freeze.tsv"
-    # local_path = "/tmp/data_freeze_list.tsv"
-    # fetch_from_s3(data_freeze_path, local_path)
-    local_path = os.path.abspath(data_freeze_path)
-    data_freeze = {}
-    with open(local_path, "r") as f:
-        for line in f:
-            parts = re.split(r"\s*\t\s*", line.strip())
-            if len(parts) < 2:
-                continue
-            accession, data_freezes = parts[0], re.split(r"\s*,\s*", parts[1])
-            data_freeze[accession] = data_freezes
-    # os.remove(local_path)
+    data_freeze = parse_s3_file(data_freeze_path)
+    print(f"Parsed {len(data_freeze)} entries from data freeze file")
     return data_freeze
 
 
@@ -443,8 +432,8 @@ def process_datafreeze_info(processed_report: dict, data_freeze: dict, config: C
             f"Processing data freeze info for {line['refseqAccession']} - "
             f"{line['genbankAccession']}"
         )
-        status = data_freeze.get(line["refseqAccession"], None) or data_freeze.get(
-            line["genbankAccession"], None
+        status = data_freeze.get(line["refseqAccession"]) or data_freeze.get(
+            line["genbankAccession"]
         )
         if not status:
             continue
@@ -452,11 +441,10 @@ def process_datafreeze_info(processed_report: dict, data_freeze: dict, config: C
 
         accession_name = (
             line["refseqAccession"]
-            if line["refseqAccession"] in data_freeze.keys()
+            if line["refseqAccession"] in data_freeze
             else line["genbankAccession"]
         )
-        line["assemblyID"] = accession_name + "_" + data_freeze_name
-        print(line["assemblyID"])
+        line["assemblyID"] = f"{accession_name}_{data_freeze_name}"
 
 
 @flow(log_prints=True)
@@ -496,7 +484,7 @@ def parse_ncbi_assemblies(
     if data_freeze_path is None:
         set_data_freeze_default(parsed, data_freeze_name="latest")
     else:
-        data_freeze = fetch_data_freeze_file(
+        data_freeze = parse_data_freeze_file(
             data_freeze_path
         )  # This returns the data freeze dictionary
         process_datafreeze_info(parsed, data_freeze, config)
