@@ -41,6 +41,14 @@ ASSEMBLY_ID = {
     },
 }
 
+DATA_FREEZE_PATH = {
+    "flags": ["--data_freeze_path"],
+    "keys": {
+        "help": "Path to data freeze list TSV on S3.",
+        "type": str,
+    },
+}
+
 DATE = {
     "flags": ["--date"],
     "keys": {

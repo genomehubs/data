@@ -24,7 +24,9 @@ def check_tsv_file_exists(config: Config, work_dir: str) -> bool:
 
 
 @flow()
-def parse_skip_parsing(working_yaml: str, work_dir: str, append: bool) -> None:
+def parse_skip_parsing(
+    working_yaml: str, work_dir: str, append: bool, **kwargs
+) -> None:
     """
     Skip parsing.
 
@@ -32,6 +34,7 @@ def parse_skip_parsing(working_yaml: str, work_dir: str, append: bool) -> None:
         working_yaml (str): Path to the working YAML file.
         work_dir (str): Path to the working directory.
         append (bool): Whether to append to the existing TSV file.
+        **kwargs: Additional keyword arguments.
     """
     # Get the config from the YAML file
     config = load_config(working_yaml)
