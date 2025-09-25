@@ -173,7 +173,7 @@ deployments:
     # This flow updates a data freeze JSONL file
     entrypoint: flows/updaters/update_ncbi_datasets.py:update_ncbi_datasets
     parameters:
-      output_path: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}/vgp_phase1.jsonl"
+      output_path: "/home/ubuntu/tmp/test/assembly-data-vgp-phase1/vgp_phase1.jsonl"
       s3_path: s3://goat/resources/data-freeezes/vgp_phase1.jsonl.gz
       data_freeze_path: "s3://goat/resources/data-freezes/vgp_phase1_list_data_freeze.tsv"
     work_pool: *goat_data_work_pool
@@ -184,7 +184,7 @@ deployments:
       parser: "ParserEnum.NCBI_ASSEMBLIES"
       yaml_path: "../goat-data-main/sources/assembly-data/vgp_phase1.types.yaml"
       s3_path: "s3://goat/sources/assembly-data/"
-      work_dir: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data-vgp-phase1"
       data_freeze_path: "s3://goat/resources/data-freezes/vgp_phase1_list_data_freeze.tsv"
       append: true
       dry_run: true
@@ -193,14 +193,14 @@ deployments:
         match:
           prefect.resource.type: ncbi.datasets
           prefect.resource.matches.previous: "no"
-          prefect.resource.id": fetch.datasets./home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}/vgp_phase1.jsonl"
+          prefect.resource.id": fetch.datasets./home/ubuntu/tmp/test/assembly-data-vgp-phase1/vgp_phase1.jsonl"
         expect:
           - update.ncbi.datasets.finished
         parameters:
           parser: "ParserEnum.NCBI_ASSEMBLIES"
           yaml_path: "../goat-data-main/sources/assembly-data/vgp_phase1.types.yaml"
           s3_path: "s3://goat/sources/assembly-data/"
-          work_dir: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data-vgp-phase1"
           data_freeze_path: "s3://goat/resources/data-freezes/vgp_phase1_list_data_freeze.tsv"
           append: true
           dry_run: true
