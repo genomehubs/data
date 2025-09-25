@@ -2,7 +2,9 @@ from flows.lib.utils import Parser  # noqa: E402
 from flows.parsers.args import parse_args  # noqa: E402
 
 
-def parse_sequencing_status(working_yaml: str, work_dir: str, append: bool) -> None:
+def parse_sequencing_status(
+    working_yaml: str, work_dir: str, append: bool, **kwargs
+) -> None:
     """
     Wrapper function to parse the sequencing status files.
 
@@ -10,6 +12,7 @@ def parse_sequencing_status(working_yaml: str, work_dir: str, append: bool) -> N
         working_yaml (str): Path to the working YAML file.
         work_dir (str): Path to the working directory.
         append (bool): Whether to append to the existing TSV file.
+        **kwargs: Additional keyword arguments.
     """
     print("parsing sequencing status files")
 

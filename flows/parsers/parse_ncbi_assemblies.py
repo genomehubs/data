@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 from collections import defaultdict
 from glob import glob
@@ -9,7 +10,7 @@ from genomehubs import utils as gh_utils
 
 from flows.lib import utils  # noqa: E402
 from flows.lib.conditional_import import flow, run_count, task  # noqa: E402
-from flows.lib.utils import Config, Parser  # noqa: E402
+from flows.lib.utils import Config, Parser, parse_s3_file  # noqa: E402
 from flows.parsers.args import parse_args  # noqa: E402
 
 
@@ -353,6 +354,7 @@ def process_assembly_reports(
     """
     for report in parse_assembly_report(jsonl_path=jsonl_path):
         try:
+            print(f"Processing report for {report.get('accession', 'unknown')}")
             processed_report = process_assembly_report(
                 report, previous_report, config, parsed
             )
@@ -376,9 +378,83 @@ def process_assembly_reports(
             continue
 
 
+@task(log_prints=True)
+def parse_data_freeze_file(data_freeze_path: str) -> dict:
+    """
+    Fetch and parse a 2-column TSV with the data freeze list of assemblies and their
+    respective status from the given S3 path.
+
+    Args:
+        data_freeze_path (str): The S3 path to the data freeze list TSV file.
+    Returns:
+        dict: A dictionary mapping assembly accessions to their freeze subsets.
+
+    """
+    # from s3 to temporary file
+    print(f"Fetching data freeze file from {data_freeze_path}")
+    data_freeze = parse_s3_file(data_freeze_path)
+    print(f"Parsed {len(data_freeze)} entries from data freeze file")
+    return data_freeze
+
+
+@task()
+def set_data_freeze_default(parsed: dict, data_freeze_name: str):
+    """
+    Set the default data freeze information for all assemblies.
+
+    Args:
+        parsed (dict): A dictionary containing parsed data.
+        data_freeze_name (str): The name of the default data freeze.
+    """
+    for line in parsed.values():
+        line["dataFreeze"] = [data_freeze_name]
+        line["assemblyID"] = line["genbankAccession"]
+
+
+@task(log_prints=True)
+def process_datafreeze_info(processed_report: dict, data_freeze: dict, config: Config):
+    """
+    Process the data freeze information for a given assembly report.
+    Rename the assembly
+
+    Args:
+        processed_report (dict): A dictionary containing processed assembly data.
+        data_freeze (dict): A dictionary containing data freeze information.
+    """
+    data_freeze_name = (
+        re.sub(r"\.tsv(\.gz)?$", "", os.path.basename(config.meta["file_name"]))
+        if config.meta["file_name"]
+        else "data_freeze"
+    )
+    print(f"Processing data freeze info for {data_freeze_name}")
+    for line in processed_report.values():
+        print(
+            f"Processing data freeze info for {line['refseqAccession']} - "
+            f"{line['genbankAccession']}"
+        )
+        status = data_freeze.get(line["refseqAccession"]) or data_freeze.get(
+            line["genbankAccession"]
+        )
+        if not status:
+            continue
+        line["dataFreeze"] = status
+
+        accession_name = (
+            line["refseqAccession"]
+            if line["refseqAccession"] in data_freeze
+            else line["genbankAccession"]
+        )
+        line["assemblyID"] = f"{accession_name}_{data_freeze_name}"
+
+
 @flow(log_prints=True)
 def parse_ncbi_assemblies(
-    input_path: str, yaml_path: str, append: bool, feature_file: Optional[str] = None
+    input_path: str,
+    yaml_path: str,
+    append: bool,
+    feature_file: Optional[str] = None,
+    data_freeze_path: Optional[str] = None,
+    **kwargs,
 ):
     """
     Parse NCBI datasets assembly data.
@@ -388,6 +464,8 @@ def parse_ncbi_assemblies(
         yaml_path (str): Path to the YAML configuration file.
         append (bool): Flag to append values to an existing TSV file(s).
         feature_file (str): Path to the feature file.
+        data_freeze_path (str): Path to data freeze list TSV on S3.
+        **kwargs: Additional keyword arguments.
     """
     config = utils.load_config(
         config_file=yaml_path,
@@ -396,11 +474,20 @@ def parse_ncbi_assemblies(
     )
     if feature_file is not None:
         set_up_feature_file(config)
+
     biosamples = {}
     parsed = {}
     previous_report = {} if append else None
     process_assembly_reports(input_path, config, biosamples, parsed, previous_report)
     set_representative_assemblies(parsed, biosamples)
+
+    if data_freeze_path is None:
+        set_data_freeze_default(parsed, data_freeze_name="latest")
+    else:
+        data_freeze = parse_data_freeze_file(
+            data_freeze_path
+        )  # This returns the data freeze dictionary
+        process_datafreeze_info(parsed, data_freeze, config)
     write_to_tsv(parsed, config)
 
 

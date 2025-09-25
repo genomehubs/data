@@ -8,6 +8,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import tempfile
 from argparse import Action
 from csv import DictReader, Sniffer
 from datetime import datetime
@@ -753,6 +754,42 @@ def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
     except Exception as e:
         print(f"Error uploading {local_path} to {s3_path}: {e}")
         raise e
+
+
+def parse_s3_file(data_freeze_path: str) -> dict:
+    """
+    Fetch and parse a 2-column TSV from the given S3 path.
+
+    Args:
+        data_freeze_path (str): The S3 path to the TSV file.
+    Returns:
+        dict: A dictionary mapping column 1 keys to their corresponding values.
+
+    """
+    # from s3 to temporary file
+    print(f"Fetching data freeze file from {data_freeze_path}")
+    with tempfile.NamedTemporaryFile() as tmp_file:
+        local_path = tmp_file.name
+        fetch_from_s3(data_freeze_path, local_path)
+        parsed = {}
+        with open(local_path, "r") as f:
+            for line in f:
+                parts = [p.strip() for p in line.strip().split("\t")]
+                key = parts[0]
+                if len(parts) < 2:
+                    parsed[key] = []
+                    continue
+                # For each value column, split on comma and store as list
+                value_lists = [
+                    [v.strip() for v in col.split(",") if v.strip()]
+                    for col in parts[1:]
+                ]
+                parsed[key] = (
+                    value_lists
+                    if len(value_lists) > 1
+                    else (value_lists[0] if value_lists else [])
+                )
+    return parsed
 
 
 def set_index_name(
