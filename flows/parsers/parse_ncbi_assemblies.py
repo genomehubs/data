@@ -492,13 +492,21 @@ def parse_ncbi_assemblies(
 
 
 def parse_ncbi_assemblies_wrapper(
-    working_yaml: str, work_dir: str, append: bool
+    working_yaml: str,
+    work_dir: str,
+    append: bool,
+    data_freeze_path: Optional[str] = None,
+    **kwargs,
 ) -> None:
     """
     Wrapper function to parse the NCBI assemblies JSONL file.
 
     Args:
         working_yaml (str): Path to the working YAML file.
+        work_dir (str): Path to the working directory.
+        append (bool): Whether to append to the existing TSV file.
+        data_freeze_path (str, optional): Path to a data freeze list TSV on S3.
+        **kwargs: Additional keyword arguments.
     """
     # use glob to find the jsonl file in the working directory
     glob_path = os.path.join(work_dir, "*.jsonl")
@@ -509,7 +517,12 @@ def parse_ncbi_assemblies_wrapper(
     # rais error if more than one jsonl file is found
     if len(paths) > 1:
         raise ValueError(f"More than one jsonl file found in {work_dir}")
-    parse_ncbi_assemblies(input_path=paths[0], yaml_path=working_yaml, append=append)
+    parse_ncbi_assemblies(
+        input_path=paths[0],
+        yaml_path=working_yaml,
+        append=append,
+        data_freeze_path=data_freeze_path,
+    )
 
 
 def plugin():
