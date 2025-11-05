@@ -205,3 +205,15 @@ deployments:
           append: true
           dry_run: true
     work_pool: *goat_data_work_pool
+
+  - name: update-nhm-status-list
+    # This flow updates the NHM status list
+    entrypoint: flows/updaters/update_nhm_status_list.py:update_nhm_status_list
+    parameters:
+      # Local path to save the NHM status list TSV file
+      output_path: "/home/ubuntu/tmp/test/status-lists/nhm.tsv"
+      # The S3 path to save the NHM status list TSV file
+      s3_path: s3://goat/resources/status-lists/nhm.tsv
+    schedules:
+      - *daily
+    work_pool: *goat_data_work_pool

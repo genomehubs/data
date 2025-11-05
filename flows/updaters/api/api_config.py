@@ -1,4 +1,7 @@
+import ast
+import contextlib
 import json
+import os
 import time
 
 import yaml
@@ -47,6 +50,8 @@ def vgl_row_handler(r_text, fieldnames, **kwargs):
 # NHM
 #####################################################################
 
+NHM_PAGE_SIZE = 1000
+
 nhm_fieldnames = [
     "institutionCode",
     "otherCatalogNumbers",
@@ -58,10 +63,13 @@ nhm_fieldnames = [
     "genus",
     "specificEpithet",
     "year",
+    "sequencing_status",
+    "sample_collected",
+    "sample_collected_by",
 ]
 nhm_output_filename = "nhm.raw"
 nhm_post_data = {
-    "size": "1000",
+    "size": NHM_PAGE_SIZE,
     "resource_ids": ["05ff2255-c38a-40c9-b657-4ccb55ab2feb"],
     "query": {
         "filters": {
@@ -94,30 +102,71 @@ def nhm_api_count_handler(r_text):
     return j["result"]["total"]
 
 
-def nhm_row_handler(fieldnames, **kwargs):
+def nhm_row_handler(fieldnames, temp_file, **kwargs):
     nhm_post_data_after = nhm_post_data
     result = []
     counter = 0
-    step = 1000
+    step = NHM_PAGE_SIZE
+    after_file = None
+    if temp_file:
+        after_file = f"{temp_file}.after"
+        if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
+            with contextlib.suppress(FileNotFoundError):
+                with open(after_file, "r") as af:
+                    after = af.read().strip()
+                    print(after)
+                    if after:
+                        nhm_post_data_after.update({"after": ast.literal_eval(after)})
+            with open(temp_file, "r") as tf:
+                for line in tf:
+                    row = line.strip().split("\t")
+                    result.append(row)
+            counter = len(result)
+    fixed_values = {
+        "sequencing_status": "sample_collected",
+        "sample_collected": "DTOL",
+        "sample_collected_by": "NHM",
+    }
     while True:
-        print(f"Fetching NHM records {counter}-{counter + step}")
+        print(f"Fetching NHM records {counter + 1}-{counter + step}")
+        print(nhm_post_data_after)
         response = safe_get(
             nhm_url, method="POST", headers=nhm_headers, json=nhm_post_data_after
         )
+        print("Response received")
+        print(response)
         r = response.json()
         dl = r["result"]["records"]
+        batch = []
         for species in dl:
             item_value = []
             for f in fieldnames:
-                field_value = species["data"].get(f)
+                field_value = species["data"].get(f) or fixed_values.get(f)
                 if f == "otherCatalogNumbers":
                     field_value = field_value[17:]
                 item_value.append(field_value)
-            result.append(item_value)
+            batch.append(item_value)
         nhm_post_data_after.update({"after": r["result"]["after"]})
+        if temp_file:
+            with open(temp_file, "a") as tf:
+                for row in batch:
+                    tf.write(
+                        "\t".join(str(item) if item is not None else "" for item in row)
+                        + "\n"
+                    )
+            with open(after_file, "w") as af:
+                af.write(str(r["result"]["after"]))
+        result.extend(batch)
         if r["result"]["after"] is None:
+            print("No more records to fetch")
+            # delete temp and after files
+            if temp_file:
+                with contextlib.suppress(FileNotFoundError):
+                    os.remove(temp_file)
+                with contextlib.suppress(FileNotFoundError):
+                    os.remove(after_file)
             break
-        time.sleep(5)
+        time.sleep(10)
         counter += step
     return result
 
@@ -190,8 +239,6 @@ def sts_row_handler(result_count, fieldnames, token, **kwargs):
     result = []
 
     for page in range(1, int(result_count / page_size) + 2):
-        print(page)
-
         url = f"{sts_url}?page={page}&page_size={page_size}"
         r = safe_get(
             url, headers={"Token": token, "Project": "ALL"}, verify=False
