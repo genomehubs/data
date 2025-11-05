@@ -1,5 +1,6 @@
 import hashlib
 import os
+from collections import defaultdict
 
 import boto3
 from botocore.exceptions import ClientError
@@ -171,7 +172,7 @@ def prepare_output_files(file_path, visited_file_path, append):
     return visited_assembly_ids, line_count
 
 
-def fetch_goat_results(root_taxid):
+def fetch_goat_results(root_taxid: str, output_path: str) -> list[dict]:
     # GoaT results for the root taxID
     query = (
         f"tax_tree%28{root_taxid}%29%20AND%20assembly_level%20%3D%20chromosome%2C"
@@ -198,9 +199,76 @@ def fetch_goat_results(root_taxid):
 
     # Parse the TSV response
     if tsv_data := parse_tsv(response.text):
+        with open(output_path, "w") as f:
+            f.write(response.text)
         return tsv_data
     else:
         raise RuntimeError("No data found in BoaT config info response")
+
+
+def trawl_farm_data(goat_results_path: str, farm_results_path: str) -> None:
+    """Trawl farm data to find additional assemblies.
+
+    Args:
+        goat_results_path (str): Path to the GoaT results TSV file.
+        farm_results_path (str): Path to save the farm results TSV file.
+    """
+    import csv
+    import subprocess
+    import time
+
+    if not os.path.exists(goat_results_path):
+        raise FileNotFoundError(f"GoaT results file not found: {goat_results_path}")
+
+    # Read the GoaT results to get taxon IDs and assembly names
+    taxon_assembly = []
+    with open(goat_results_path, "r") as f:
+        header = f.readline().strip().split("\t")
+        taxon_id_idx = header.index("taxon_id")
+        assembly_name_idx = header.index("assembly_name")
+        for line in f:
+            fields = line.strip().split("\t")
+            taxon_id = fields[taxon_id_idx]
+            assembly_name = fields[assembly_name_idx]
+            taxon_assembly.append((taxon_id, assembly_name))
+
+    # Write input CSV for trawler.sh
+    input_csv = "farm_trawl_input.csv"
+    with open(input_csv, "w", newline="") as csvfile:
+        writer = csv.writer(csvfile)
+        for taxon_id, assembly_name in taxon_assembly:
+            writer.writerow([taxon_id, assembly_name])
+
+    # Copy trawler.sh and input CSV to farm
+    trawler_script = "trawler.sh"
+    remote_script = "trawler.sh"
+    remote_input = "farm_trawl_input.csv"
+    remote_output = "farm_trawl_output.csv"
+    subprocess.run(["scp", trawler_script, f"farm:~/{remote_script}"], check=True)
+    subprocess.run(["scp", input_csv, f"farm:~/{remote_input}"], check=True)
+
+    # Submit job via bsub
+    bsub_cmd = f". /etc/profile && rm -f $HOME/{remote_output}.finished && bsub -o trawler.log bash $HOME/{remote_script} $HOME/{remote_input} $HOME/{remote_output}"
+    subprocess.run(["ssh", "farm", bsub_cmd], check=True)
+
+    # Wait for output file to appear
+    while True:
+        result = subprocess.run(
+            [
+                "ssh",
+                "farm",
+                f"test -f ~/{remote_output}.finished && echo READY || echo WAIT",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if "READY" in result.stdout:
+            break
+        print("Waiting for farm trawler job to finish...")
+        time.sleep(30)
+
+    # Copy output file back
+    subprocess.run(["scp", f"farm:~/{remote_output}", farm_results_path], check=True)
 
 
 @task(retries=2, retry_delay_seconds=2, log_prints=True)
@@ -348,16 +416,123 @@ def compare_datasets_summary(local_path: str, s3_path: str) -> bool:
     return local_md5 == remote_md5
 
 
+def filter_buscos(buscos):
+    # Exclude bacteria_odb and archaea_odb
+    buscos = [
+        b
+        for b in buscos
+        if not (
+            b.startswith("bacteria_odb")
+            or b.startswith("archaea_odb")
+            or b.startswith("mm49_")
+        )
+    ]
+    # Group by prefix before _odb
+    prefix_map = defaultdict(list)
+    for b in buscos:
+        prefix = b.split("_odb")[0]
+        prefix_map[prefix].append(b)
+    filtered = []
+    for prefix, items in prefix_map.items():
+        if len(items) > 1:
+            if metaeuk := [x for x in items if x.endswith("_metaeuk")]:
+                filtered.extend(metaeuk)
+            else:
+                filtered.append(items[0])
+                print(f"Warning: Multiple BUSCOs with prefix {prefix}: {items}")
+        else:
+            filtered.extend(items)
+    return filtered
+
+
+@task(log_prints=True)
+def filter_farm_data(
+    farm_results_path: str, goat_results_path: str, output_path: str
+) -> None:
+    """Filter farm results to include only assemblies with lepidoptera BUSCOs.
+
+    Combine with GoaT results to add additional fields.
+
+    Args:
+        farm_results_path (str): Path to the farm results TSV file.
+        goat_results_path (str): Path to the GoaT results TSV file.
+        output_path (str): Path to save the filtered results TSV file.
+    """
+    if not os.path.exists(farm_results_path):
+        raise FileNotFoundError(f"Farm results file not found: {farm_results_path}")
+    if not os.path.exists(goat_results_path):
+        raise FileNotFoundError(f"GoaT results file not found: {goat_results_path}")
+
+    # Read assembly IDs from GoaT results
+    goat_data = {}
+    with open(goat_results_path, "r") as f:
+        goat_header = f.readline().strip().split("\t")
+        assembly_name_idx = goat_header.index("assembly_name")
+        for line in f:
+            fields = line.strip().split("\t")
+            assembly_name = fields[assembly_name_idx]
+            goat_data[assembly_name] = fields
+
+    config_header = [
+        "taxon_id",
+        "assembly_id",
+        "assembly_name",
+        "assembly_span",
+        "chromosome_count",
+        "assembly_level",
+        "lustre_path",
+        "busco_sets",
+    ]
+    # Filter farm results
+    with open(farm_results_path, "r") as infile, open(output_path, "w") as outfile:
+        infile.readline()
+        outfile.write("\t".join(config_header) + "\n")
+        for line in infile:
+            fields = line.strip().split(",")
+            if len(fields) < 4 or not fields[2] or not fields[3]:
+                continue
+            buscos = fields[3].split(";")
+            buscos = [b for b in buscos if b]
+            filtered_buscos = filter_buscos(buscos)
+            # if not any(
+            #     busco.startswith("lepidoptera_odb") for busco in filtered_buscos
+            # ):
+            #     continue
+            assembly_name = fields[1]
+            if assembly_name in goat_data:
+                # Optionally merge with goat_data fields if needed
+                # Skip second and third columns from goat_data
+                # Keep first column, then columns from index 3 onward
+                merged = (
+                    [goat_data[assembly_name][0]]
+                    + goat_data[assembly_name][3:]
+                    + [fields[2]]
+                    + [",".join(filtered_buscos)]
+                )
+                outfile.write("\t".join(merged) + "\n")
+
+
 @flow()
 def update_boat_config(
     root_taxid: str, output_path: str, append: bool, s3_path: str
 ) -> None:
-    line_count = fetch_boat_config_info(
-        root_taxid, file_path=output_path, min_lines=1, append=append
+    # fetch_goat_results(root_taxid, f"{output_path}/goat_results.tsv")
+
+    # trawl_farm_data(
+    #     f"{output_path}/goat_results.tsv", f"{output_path}/farm_results.csv"
+    # )
+
+    filter_farm_data(
+        f"{output_path}/farm_results.csv",
+        f"{output_path}/goat_results.tsv",
+        f"{output_path}/filtered_farm_results.tsv",
     )
-    print(
-        f"Fetched BoaT config info for taxID {root_taxid}. Lines written: {line_count}"
-    )
+    # line_count = fetch_boat_config_info(
+    #     root_taxid, file_path=output_path, min_lines=1, append=append
+    # )
+    # print(
+    #     f"Fetched BoaT config info for taxID {root_taxid}. Lines written: {line_count}"
+    # )
     # if s3_path:
     #     status = compare_datasets_summary(output_path, s3_path)
     #     emit_event(
