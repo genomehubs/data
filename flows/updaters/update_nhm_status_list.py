@@ -1,3 +1,5 @@
+import os
+
 from flows.lib.conditional_import import emit_event, flow, task
 from flows.lib.shared_args import (
     MIN_RECORDS,
@@ -56,6 +58,8 @@ def upload_s3_tsv(local_path: str, s3_path: str) -> None:
 
 @flow()
 def update_nhm_status_list(output_path: str, s3_path: str, min_records: int) -> None:
+    """Update the NHM status list TSV file."""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     line_count = fetch_nhm_tsv(output_path, min_records)
     if line_count > min_records and s3_path:
         upload_s3_tsv(output_path, s3_path)
