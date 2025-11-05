@@ -214,6 +214,8 @@ deployments:
       output_path: "/home/ubuntu/tmp/test/status-lists/nhm.tsv"
       # The S3 path to save the NHM status list TSV file
       s3_path: s3://goat/resources/status-lists/nhm.tsv
+      # Minimum number of records expected in the NHM status list
+      min_records: 18000
     schedules:
       - *daily
     work_pool: *goat_data_work_pool
