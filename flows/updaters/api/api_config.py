@@ -1,4 +1,5 @@
 import json
+import time
 
 import yaml
 
@@ -77,8 +78,11 @@ nhm_post_data = {
 }
 
 
-nhm_url = "https://data.nhm.ac.uk/api/3/action/datastore_multisearch"
-nhm_headers = {"content-type": "application/json"}
+nhm_url = "https://data.nhm.ac.uk/api/3/action/vds_multi_query"
+nhm_headers = {
+    "content-type": "application/json",
+    "user-agent": "GoaT DToL script (curators contact: goat@genomehubs.org)",
+}
 
 
 def nhm_url_opener(**kwargs):
@@ -93,7 +97,10 @@ def nhm_api_count_handler(r_text):
 def nhm_row_handler(fieldnames, **kwargs):
     nhm_post_data_after = nhm_post_data
     result = []
+    counter = 0
+    step = 1000
     while True:
+        print(f"Fetching NHM records {counter}-{counter + step}")
         response = safe_get(
             nhm_url, method="POST", headers=nhm_headers, json=nhm_post_data_after
         )
@@ -107,10 +114,11 @@ def nhm_row_handler(fieldnames, **kwargs):
                     field_value = field_value[17:]
                 item_value.append(field_value)
             result.append(item_value)
-        print(r["result"]["after"])
         nhm_post_data_after.update({"after": r["result"]["after"]})
         if r["result"]["after"] is None:
             break
+        time.sleep(5)
+        counter += step
     return result
 
 
