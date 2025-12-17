@@ -13,6 +13,7 @@ Options:
   --goat-url: Base URL for the GoaT API.
   --ranks: Taxonomic ranks to filter results.
   --ancestor: Scientific name of the ancestor to filter results.
+  --fields: Comma-separated list of fields to retrieve.
 """
 
 import argparse
@@ -49,6 +50,12 @@ def parse_args():
     parser.add_argument(
         "--ancestor", "-a", help="Scientific name of the ancestor to filter results."
     )
+    parser.add_argument(
+        "--fields",
+        "-f",
+        default="none",
+        help="Comma-separated list of fields to retrieve.",
+    )
     return parser.parse_args()
 
 
@@ -69,7 +76,10 @@ def parse_results(taxon_name, data, ancestor, outfile, headers):
     if result_count == 0:
         rows = [[taxon_name] + ["None"] * (len(headers) - 2) + ["0"]]
     else:
-        rows.extend([taxon_name] + fields + [str(result_count)] for fields in results)
+        rows.extend(
+            [taxon_name] + [field or "None" for field in fields] + [str(result_count)]
+            for fields in results
+        )
     for row in rows:
         outfile.write("\t".join(row) + "\n")
 
@@ -84,11 +94,18 @@ def main():
     try:
         for line in infile:
             taxon_name = line.strip()
-            api_url = (
-                f"{args.goat_url}/search"
-                f"?query=tax_name%28{taxon_name.replace(' ', '%20')}%29"
-                f"&taxonomy=ncbi&result=taxon&fields=none"
-                f"&ranks={args.ranks.replace(',', '%2C')}"
+            import urllib.parse
+
+            query = f"tax_name({taxon_name})"
+            params = {
+                "query": query,
+                "taxonomy": "ncbi",
+                "result": "taxon",
+                "fields": args.fields,
+                "ranks": args.ranks,
+            }
+            api_url = f"{args.goat_url}/search?" + urllib.parse.urlencode(
+                params, safe="", quote_via=urllib.parse.quote
             )
             response = requests.get(
                 api_url, headers={"Accept": "text/tab-separated-values"}, timeout=300
