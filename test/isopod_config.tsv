@@ -1,0 +1,5 @@
+taxon_id	assembly_id	assembly_name	assembly_span	chromosome_count	assembly_level	lustre_path	busco_sets
+2922061	GCA_963969495.1	qmCerStei3.1	3927816710	23	Chromosome	/lustre/scratch122/tol/data/0/6/c/d/e/f/Ceratothoa_steindachneri/analysis/qmCerStei3.1/busco	arthropoda_odb10
+92525	GCA_964212115.1	qmAseAqua29.1	1977804001	8	Chromosome	/lustre/scratch122/tol/data/f/2/e/4/e/7/Asellus_aquaticus/analysis/qmAseAqua29.1/busco	archaea_odb10,arthropoda_odb10,bacteria_odb10,eukaryota_odb10,metazoa_odb10
+2067965	GCA_965194735.1	qmJaeIsch1.1	839243849	13	Chromosome	/lustre/scratch122/tol/data/3/d/6/7/5/5/Jaera_ischiosetosa/analysis/qmJaeIsch1.1/busco	archaea_odb10,arthropoda_odb10,bacteria_odb10,eukaryota_odb10,metazoa_odb10
+2613951	GCA_965208005.1	qmJaePrae1.hap1.1	881839946	11	Chromosome	/lustre/scratch122/tol/data/b/2/a/1/6/d/Jaera_praehirsuta/analysis/qmJaePrae1.hap1.1/busco	archaea_odb10,arthropoda_odb10,bacteria_odb10,eukaryota_odb10,metazoa_odb10

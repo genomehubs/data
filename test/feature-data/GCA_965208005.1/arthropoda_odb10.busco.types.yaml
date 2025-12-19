@@ -1,0 +1,240 @@
+file:
+  format: tsv
+  header: true
+  name: arthropoda_odb10.busco.tsv
+  source: BlobToolKit
+  source_url_stub: https://blobtoolkit.genomehubs.org
+attributes:
+  arthropoda_odb10_fragmented_proportion:
+    description: Proportion of arthropoda_odb10 fragmented genes
+    header: arthropoda_odb10_fragmented_proportion
+    name: arthropoda_odb10_fragmented_proportion
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: 2dp
+  arthropoda_odb10_duplicated_count:
+    description: Count of arthropoda_odb10 duplicated genes
+    header: arthropoda_odb10_duplicated_count
+    name: arthropoda_odb10_duplicated_count
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: short
+  arthropoda_odb10_duplicated_proportion:
+    description: Proportion of arthropoda_odb10 duplicated genes
+    header: arthropoda_odb10_duplicated_proportion
+    name: arthropoda_odb10_duplicated_proportion
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: 2dp
+  taxon_id:
+    header: taxon_id
+    source: null
+    type: keyword
+  arthropoda_odb10_complete_count:
+    description: Count of arthropoda_odb10 complete genes
+    header: arthropoda_odb10_complete_count
+    name: arthropoda_odb10_complete_count
+    source: null
+    taxon_display_level: 2
+    taxon_summary: max
+    taxon_traverse: max
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: short
+  arthropoda_odb10_complete_proportion:
+    description: Proportion of arthropoda_odb10 complete genes
+    header: arthropoda_odb10_complete_proportion
+    name: arthropoda_odb10_complete_proportion
+    source: null
+    taxon_display_level: 2
+    taxon_summary: max
+    taxon_traverse: max
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: 2dp
+  arthropoda_odb10_duplicated:
+    description: List of arthropoda_odb10 duplicated genes
+    display_group: busco
+    display_level: 2
+    header: arthropoda_odb10_duplicated
+    list_key: arthropoda_odb10_duplicated
+    name: arthropoda_odb10_duplicated
+    order:
+    - arthropoda_odb10_duplicated
+    - arthropoda_odb10_single
+    return_type: length
+    separator: ','
+    source: null
+    summary: list
+    taxon_display_level: 2
+    taxon_summary: ordered_list
+    taxon_traverse: ordered_list
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: keyword
+  arthropoda_odb10_single_count:
+    description: Count of arthropoda_odb10 single genes
+    header: arthropoda_odb10_single_count
+    name: arthropoda_odb10_single_count
+    source: null
+    taxon_display_level: 2
+    taxon_summary: max
+    taxon_traverse: max
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: short
+  arthropoda_odb10_missing:
+    description: List of arthropoda_odb10 missing genes
+    display_group: busco
+    display_level: 2
+    header: arthropoda_odb10_missing
+    list_key: arthropoda_odb10_missing
+    name: arthropoda_odb10_missing
+    order:
+    - arthropoda_odb10_complete
+    - arthropoda_odb10_fragmented
+    - arthropoda_odb10_missing
+    return_type: length
+    separator: ','
+    source: null
+    summary: list
+    taxon_display_level: 2
+    taxon_summary: ordered_list
+    taxon_traverse: ordered_list
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: keyword
+  arthropoda_odb10_missing_count:
+    description: Count of arthropoda_odb10 missing genes
+    header: arthropoda_odb10_missing_count
+    name: arthropoda_odb10_missing_count
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: short
+  arthropoda_odb10_missing_proportion:
+    description: Proportion of arthropoda_odb10 missing genes
+    header: arthropoda_odb10_missing_proportion
+    name: arthropoda_odb10_missing_proportion
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: 2dp
+  arthropoda_odb10_single_proportion:
+    description: Proportion of arthropoda_odb10 single genes
+    header: arthropoda_odb10_single_proportion
+    name: arthropoda_odb10_single_proportion
+    source: null
+    taxon_display_level: 2
+    taxon_summary: max
+    taxon_traverse: max
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: 2dp
+  arthropoda_odb10_single:
+    description: List of arthropoda_odb10 single genes
+    display_group: busco
+    display_level: 2
+    header: arthropoda_odb10_single
+    list_key: arthropoda_odb10_single
+    name: arthropoda_odb10_single
+    order:
+    - arthropoda_odb10_duplicated
+    - arthropoda_odb10_single
+    return_type: length
+    separator: ','
+    source: null
+    summary: list
+    taxon_display_level: 2
+    taxon_summary: ordered_list
+    taxon_traverse: ordered_list
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: keyword
+  arthropoda_odb10_fragmented_count:
+    description: Count of arthropoda_odb10 fragmented genes
+    header: arthropoda_odb10_fragmented_count
+    name: arthropoda_odb10_fragmented_count
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: short
+  arthropoda_odb10_complete:
+    description: List of arthropoda_odb10 complete genes
+    display_group: busco
+    display_level: 2
+    header: arthropoda_odb10_complete
+    list_key: arthropoda_odb10_complete
+    name: arthropoda_odb10_complete
+    order:
+    - arthropoda_odb10_complete
+    - arthropoda_odb10_fragmented
+    - arthropoda_odb10_missing
+    return_type: length
+    separator: ','
+    source: null
+    summary: list
+    taxon_display_level: 2
+    taxon_summary: ordered_list
+    taxon_traverse: ordered_list
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: keyword
+  assembly_id:
+    header: assembly_id
+    source: null
+    type: keyword
+  arthropoda_odb10_fragmented:
+    description: List of arthropoda_odb10 fragmented genes
+    display_group: busco
+    display_level: 2
+    header: arthropoda_odb10_fragmented
+    list_key: arthropoda_odb10_fragmented
+    name: arthropoda_odb10_fragmented
+    order:
+    - arthropoda_odb10_complete
+    - arthropoda_odb10_fragmented
+    - arthropoda_odb10_missing
+    return_type: length
+    separator: ','
+    source: null
+    summary: list
+    taxon_display_level: 2
+    taxon_summary: ordered_list
+    taxon_traverse: ordered_list
+    taxon_traverse_direction: up
+    taxon_traverse_limit: arthropoda
+    type: keyword
+identifiers:
+  assembly_id:
+    constraint:
+      len: 32
+    header: assembly_id
+    source: null
+    type: keyword
+taxonomy:
+  taxon_id:
+    header: taxon_id
+    source: null
+    type: keyword

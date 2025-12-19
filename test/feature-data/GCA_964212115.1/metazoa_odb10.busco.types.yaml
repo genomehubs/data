@@ -1,0 +1,240 @@
+file:
+  format: tsv
+  header: true
+  name: metazoa_odb10.busco.tsv
+  source: BlobToolKit
+  source_url_stub: https://blobtoolkit.genomehubs.org
+attributes:
+  metazoa_odb10_single_count:
+    description: Count of metazoa_odb10 single genes
+    header: metazoa_odb10_single_count
+    name: metazoa_odb10_single_count
+    source: null
+    taxon_display_level: 2
+    taxon_summary: max
+    taxon_traverse: max
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: short
+  metazoa_odb10_complete_count:
+    description: Count of metazoa_odb10 complete genes
+    header: metazoa_odb10_complete_count
+    name: metazoa_odb10_complete_count
+    source: null
+    taxon_display_level: 2
+    taxon_summary: max
+    taxon_traverse: max
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: short
+  metazoa_odb10_duplicated_count:
+    description: Count of metazoa_odb10 duplicated genes
+    header: metazoa_odb10_duplicated_count
+    name: metazoa_odb10_duplicated_count
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: short
+  metazoa_odb10_missing:
+    description: List of metazoa_odb10 missing genes
+    display_group: busco
+    display_level: 2
+    header: metazoa_odb10_missing
+    list_key: metazoa_odb10_missing
+    name: metazoa_odb10_missing
+    order:
+    - metazoa_odb10_complete
+    - metazoa_odb10_fragmented
+    - metazoa_odb10_missing
+    return_type: length
+    separator: ','
+    source: null
+    summary: list
+    taxon_display_level: 2
+    taxon_summary: ordered_list
+    taxon_traverse: ordered_list
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: keyword
+  metazoa_odb10_complete:
+    description: List of metazoa_odb10 complete genes
+    display_group: busco
+    display_level: 2
+    header: metazoa_odb10_complete
+    list_key: metazoa_odb10_complete
+    name: metazoa_odb10_complete
+    order:
+    - metazoa_odb10_complete
+    - metazoa_odb10_fragmented
+    - metazoa_odb10_missing
+    return_type: length
+    separator: ','
+    source: null
+    summary: list
+    taxon_display_level: 2
+    taxon_summary: ordered_list
+    taxon_traverse: ordered_list
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: keyword
+  assembly_id:
+    header: assembly_id
+    source: null
+    type: keyword
+  metazoa_odb10_fragmented_proportion:
+    description: Proportion of metazoa_odb10 fragmented genes
+    header: metazoa_odb10_fragmented_proportion
+    name: metazoa_odb10_fragmented_proportion
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: 2dp
+  metazoa_odb10_fragmented:
+    description: List of metazoa_odb10 fragmented genes
+    display_group: busco
+    display_level: 2
+    header: metazoa_odb10_fragmented
+    list_key: metazoa_odb10_fragmented
+    name: metazoa_odb10_fragmented
+    order:
+    - metazoa_odb10_complete
+    - metazoa_odb10_fragmented
+    - metazoa_odb10_missing
+    return_type: length
+    separator: ','
+    source: null
+    summary: list
+    taxon_display_level: 2
+    taxon_summary: ordered_list
+    taxon_traverse: ordered_list
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: keyword
+  metazoa_odb10_duplicated:
+    description: List of metazoa_odb10 duplicated genes
+    display_group: busco
+    display_level: 2
+    header: metazoa_odb10_duplicated
+    list_key: metazoa_odb10_duplicated
+    name: metazoa_odb10_duplicated
+    order:
+    - metazoa_odb10_duplicated
+    - metazoa_odb10_single
+    return_type: length
+    separator: ','
+    source: null
+    summary: list
+    taxon_display_level: 2
+    taxon_summary: ordered_list
+    taxon_traverse: ordered_list
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: keyword
+  metazoa_odb10_duplicated_proportion:
+    description: Proportion of metazoa_odb10 duplicated genes
+    header: metazoa_odb10_duplicated_proportion
+    name: metazoa_odb10_duplicated_proportion
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: 2dp
+  metazoa_odb10_missing_proportion:
+    description: Proportion of metazoa_odb10 missing genes
+    header: metazoa_odb10_missing_proportion
+    name: metazoa_odb10_missing_proportion
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: 2dp
+  metazoa_odb10_missing_count:
+    description: Count of metazoa_odb10 missing genes
+    header: metazoa_odb10_missing_count
+    name: metazoa_odb10_missing_count
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: short
+  taxon_id:
+    header: taxon_id
+    source: null
+    type: keyword
+  metazoa_odb10_fragmented_count:
+    description: Count of metazoa_odb10 fragmented genes
+    header: metazoa_odb10_fragmented_count
+    name: metazoa_odb10_fragmented_count
+    source: null
+    taxon_display_level: 2
+    taxon_summary: min
+    taxon_traverse: min
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: short
+  metazoa_odb10_single_proportion:
+    description: Proportion of metazoa_odb10 single genes
+    header: metazoa_odb10_single_proportion
+    name: metazoa_odb10_single_proportion
+    source: null
+    taxon_display_level: 2
+    taxon_summary: max
+    taxon_traverse: max
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: 2dp
+  metazoa_odb10_complete_proportion:
+    description: Proportion of metazoa_odb10 complete genes
+    header: metazoa_odb10_complete_proportion
+    name: metazoa_odb10_complete_proportion
+    source: null
+    taxon_display_level: 2
+    taxon_summary: max
+    taxon_traverse: max
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: 2dp
+  metazoa_odb10_single:
+    description: List of metazoa_odb10 single genes
+    display_group: busco
+    display_level: 2
+    header: metazoa_odb10_single
+    list_key: metazoa_odb10_single
+    name: metazoa_odb10_single
+    order:
+    - metazoa_odb10_duplicated
+    - metazoa_odb10_single
+    return_type: length
+    separator: ','
+    source: null
+    summary: list
+    taxon_display_level: 2
+    taxon_summary: ordered_list
+    taxon_traverse: ordered_list
+    taxon_traverse_direction: up
+    taxon_traverse_limit: metazoa
+    type: keyword
+identifiers:
+  assembly_id:
+    constraint:
+      len: 32
+    header: assembly_id
+    source: null
+    type: keyword
+taxonomy:
+  taxon_id:
+    header: taxon_id
+    source: null
+    type: keyword

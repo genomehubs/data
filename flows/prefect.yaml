@@ -30,6 +30,8 @@ definitions:
       cron: "5 0 * * 1-6"
     weekly: &weekly # Runs every Monday at 00:05 UTC
       cron: "5 0 * * 1"
+    monthly: &monthly # Runs on the 1st of every month at 00:05 UTC
+      cron: "5 0 1 * *"
 
 deployments:
   - name: update-ncbi-datasets
@@ -65,14 +67,14 @@ deployments:
       # This step pulls sequence reports for each chromosomal assembly so is very slow to run in full
       append: true
       # A flag to indicate if the flow should run in dry run mode
-      # Currently set to true during development
-      # This will not upload the TSV file to S3
+      # If set to `true`, will not upload the TSV file to S3
       dry_run: true
     triggers:
       - enabled: true
         match:
           prefect.resource.type: ncbi.datasets
           prefect.resource.matches.previous: "no"
+          prefect.resource.id": fetch.datasets./home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}/ncbi_datasets_eukaryota.jsonl"
         expect:
           - update.ncbi.datasets.finished
         parameters:
@@ -82,4 +84,138 @@ deployments:
           work_dir: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}"
           append: true
           dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: update-tolid-prefixes
+    # This flow updates the TOLID prefixes file
+    entrypoint: flows/updaters/update_tolid_prefixes.py:update_tolid_prefixes
+    parameters:
+      # Local directory path to save the TOLID prefixes TSV file
+      output_path: "/home/ubuntu/tmp/test/tolid-prefixes"
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ott-taxonomy
+    # This flow updates the OTT taxonomy file
+    entrypoint: flows/updaters/update_ott_taxonomy.py:update_ott_taxonomy
+    parameters:
+      # Local directory path to save the OTT taxonomy file
+      output_path: "/home/ubuntu/tmp/test/ott-taxonomy"
+    schedules:
+      - *monthly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ncbi-taxonomy
+    # This flow updates the NCBI taxonomy dump
+    entrypoint: flows/updaters/update_ncbi_taxonomy.py:update_ncbi_taxonomy
+    parameters:
+      # Local path to save the NCBI taxonomy dump files
+      output_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
+    schedules:
+      - *daily
+    work_pool: *goat_data_work_pool
+
+  - name: update-ena-taxonomy-extra
+    # This flow updates the ENA taxonomy dump
+    entrypoint: flows/updaters/update_ena_taxonomy_extra.py:update_ena_taxonomy_extra
+    parameters:
+      # Root taxon Id to use. 2759 is the taxon Id for Eukaryota
+      root_taxid: "2759"
+      # Local path to the NCBI taxonomy dump files
+      taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
+      # Local path to save the ENA taxonomy JSONL file
+      output_path: "/home/ubuntu/tmp/test/ena-taxonomy/ena-taxonomy-extra.jsonl"
+      # The S3 path to save the ENA taxonomy JSONL file
+      s3_path: "s3://goat/resources/taxonomy/ena/ena-taxonomy-extra.jsonl.gz"
+      # A flag to indicate if the flow should append to the existing JSONL file
+      append: true
+    triggers:
+      - enabled: true
+        match:
+          prefect.resource.type: ncbi.taxonomy
+        expect:
+          - update.ncbi.taxonomy.finished
+        parameters:
+          root_taxid: "2759"
+          taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
+          output_path: "/home/ubuntu/tmp/test/ena-taxonomy/ena-taxonomy-extra.jsonl"
+          s3_path: "s3://goat/resources/taxonomy/ena/ena-taxonomy-extra.jsonl.gz"
+          append: true
+    work_pool: *goat_data_work_pool
+
+  - name: update-genomehubs-taxonomy
+    # This flow updates the GenomeHubs taxonomy file
+    entrypoint: flows/updaters/update_genomehubs_taxonomy.py:update_genomehubs_taxonomy
+    parameters:
+      # The root taxon Id to use. 2759 is the taxon Id for Eukaryota
+      root_taxid: "2759"
+      # Local path to the input configuration YAML file
+      input_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota-taxonomy-input.yaml"
+      # Local path to save the GenomeHubs taxonomy JSONL file
+      output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota/nodes.jsonl"
+      # The S3 path to save the GenomeHubs taxonomy JSONL file
+      s3_path: "s3://goat/resources/taxonomy/genomehubs/eukaryota/nodes.jsonl.gz"
+    triggers:
+      - enabled: true
+        match:
+          prefect.resource.type: ena.taxonomy
+        expect:
+          - update.ena.taxonomy.finished
+        parameters:
+          root_taxid: "2759"
+          input_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota-taxonomy-input.yaml"
+          output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota/nodes.jsonl"
+          s3_path: "s3://goat/resources/taxonomy/genomehubs/eukaryota/nodes.jsonl.gz"
+    work_pool: *goat_data_work_pool
+
+  - name: update-data-freeze
+    # This flow updates a data freeze JSONL file
+    entrypoint: flows/updaters/update_ncbi_datasets.py:update_ncbi_datasets
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data-vgp-phase1/vgp_phase1.jsonl"
+      s3_path: s3://goat/resources/data-freeezes/vgp_phase1.jsonl.gz
+      data_freeze_path: "s3://goat/resources/data-freezes/vgp_phase1_list_data_freeze.tsv"
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-data-freeze
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.NCBI_ASSEMBLIES"
+      yaml_path: "../goat-data-main/sources/assembly-data/vgp_phase1.types.yaml"
+      s3_path: "s3://goat/sources/assembly-data/"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data-vgp-phase1"
+      data_freeze_path: "s3://goat/resources/data-freezes/vgp_phase1_list_data_freeze.tsv"
+      append: true
+      dry_run: true
+    triggers:
+      - enabled: true
+        match:
+          prefect.resource.type: ncbi.datasets
+          prefect.resource.matches.previous: "no"
+          prefect.resource.id": fetch.datasets./home/ubuntu/tmp/test/assembly-data-vgp-phase1/vgp_phase1.jsonl"
+        expect:
+          - update.ncbi.datasets.finished
+        parameters:
+          parser: "ParserEnum.NCBI_ASSEMBLIES"
+          yaml_path: "../goat-data-main/sources/assembly-data/vgp_phase1.types.yaml"
+          s3_path: "s3://goat/sources/assembly-data/"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data-vgp-phase1"
+          data_freeze_path: "s3://goat/resources/data-freezes/vgp_phase1_list_data_freeze.tsv"
+          append: true
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: update-nhm-status-list
+    # This flow updates the NHM status list
+    entrypoint: flows/updaters/update_nhm_status_list.py:update_nhm_status_list
+    parameters:
+      # Local path to save the NHM status list TSV file
+      output_path: "/home/ubuntu/tmp/test/status-lists/nhm.tsv"
+      # The S3 path to save the NHM status list TSV file
+      s3_path: s3://goat/resources/status-lists/nhm.tsv
+      # Minimum number of records expected in the NHM status list
+      min_records: 18000
+    schedules:
+      - *daily
     work_pool: *goat_data_work_pool

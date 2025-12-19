@@ -10,11 +10,14 @@ def get_from_source(
     try:
         r = url_opener(token=token)
         r_text = r.text
-        print(f"response is {r_text}")
         result_count = count_handler(r_text)
         print(f"count is {result_count}")
         rows = row_handler(
-            r_text=r_text, result_count=result_count, fieldnames=fieldnames, token=token
+            r_text=r_text,
+            result_count=result_count,
+            fieldnames=fieldnames,
+            token=token,
+            temp_file=f"{output_filename}.temp",
         )
 
         with open(output_filename, "w") as output_file:

@@ -2,7 +2,6 @@
 
 A collection of prefect flows for processing and importing data into a GenomeHubs index.
 
-
 # Initial setup
 
 ## Install prefect
@@ -85,7 +84,7 @@ prefect --no-prompt deploy --prefect-file flows/prefect.yaml --all
 
 # Local development
 
-All example commands below assume dependencies have been installed as described in [install dependencies](#install-dependencies) above. For local development, the [install prefect](#install-prefect) and [deploy flows](#deploy-flows) steps are not needed. All flows can be run with a `SKIP_PREFECT` environment variable to run without a Prefect API connection. 
+All example commands below assume dependencies have been installed as described in [install dependencies](#install-dependencies) above. For local development, the [install prefect](#install-prefect) and [deploy flows](#deploy-flows) steps are not needed. All flows can be run with a `SKIP_PREFECT` environment variable to run without a Prefect API connection.
 
 When writing new flows and tasks, please follow the established conventions, referring to existing files as examples. The import sections need to handle running with and without prefect so will typically make use of `flows/lib/conditional_import.py` and command line arguments should be standardised across all flows by importing argument definitions from `flows/lib/shared_args.py`.
 
@@ -100,7 +99,7 @@ Updaters are flows used to update the local copy of data from a remote resource,
 The `update_ncbi_datasets.py` updater runs the [ncbi datasets] tool for a given root taxon ID to return a JSONL file with one line per assembly. It will optionally compare the number of lines in the fetched file to a previous version (stored in an s3 bucket) to determine whether there are additional records available. The flow emits an event on completion that can be used to trigger related flows.
 
 ```
-SKIP_PREFECT=true python3 flows/updaters/update_ncbi_datasets.py -r 9608 -o /tmp/assembly-data/ncbi_datasets_canidae.jsonl -s s3://goat/resources/assembly-data/ncbi_datasets_canidae.jsonl
+SKIP_PREFECT=true python3 -m flows.updaters.update_ncbi_datasets -r 9608 -o /tmp/assembly-data/ncbi_datasets_canidae.jsonl -s s3://goat/resources/assembly-data/ncbi_datasets_canidae.jsonl
 ```
 
 ## Fetch parse validate
@@ -116,7 +115,7 @@ The flow at `flows/lib/fetch_previous_file_pair.py` is used to fetch a YAML/TSV 
 This example command assumes the [genomehubs/goat-data](https://github.com/genomehubs/goat-data) repository is available in a sibling directory.
 
 ```
-SKIP_PREFECT=true python3 flows/lib/fetch_previous_file_pair.py -y ../goat-data/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml -s s3://goat/sources/assembly-data -w /tmp/assembly-data
+SKIP_PREFECT=true python3 -m flows.lib.fetch_previous_file_pair -y ../goat-data/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml -s s3://goat/sources/assembly-data -w /tmp/assembly-data
 ```
 
 ### `flows/parsers`
@@ -130,7 +129,7 @@ The `parse_ncbi_assemblies.py` parser takes an NCBI datasets JSONL file as input
 This example command assumes the [genomehubs/goat-data](https://github.com/genomehubs/goat-data) repository is available in a sibling directory.
 
 ```
-SKIP_PREFECT=true python3 flows/parsers/parse_ncbi_assemblies.py -i /tmp/assembly-data/ncbi_datasets_canidae.jsonl -y /tmp/assembly-data/ncbi_datasets_eukaryota.types.yaml -a
+SKIP_PREFECT=true python3 -m flows.parsers.parse_ncbi_assemblies -i /tmp/assembly-data/ncbi_datasets_canidae.jsonl -y /tmp/assembly-data/ncbi_datasets_eukaryota.types.yaml -a
 ```
 
 ### Validate
@@ -142,7 +141,7 @@ The `blobtk validate` command is still experimental and has not been tested on t
 #### Example
 
 ```
-SKIP_PREFECT=true python3 flows/lib/validate_file_pair.py -y /tmp/assembly-data/ncbi_datasets_eukaryota.types.yaml -w /tmp/assembly-data
+SKIP_PREFECT=true python3 -m flows.lib.validate_file_pair -y /tmp/assembly-data/ncbi_datasets_eukaryota.types.yaml -w /tmp/assembly-data
 
 ```
 

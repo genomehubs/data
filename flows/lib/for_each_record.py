@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from typing import Generator
 
 from conditional_import import flow
@@ -7,7 +5,6 @@ from shared_args import (
     ID_COLUMN,
     INPUT_PATH,
     S3_PATH,
-    SSH_PATH,
     WORK_DIR,
     multi,
     parse_args,
@@ -48,7 +45,6 @@ if __name__ == "__main__":
             required(ID_COLUMN),
             WORK_DIR,
             multi(S3_PATH),
-            # multi(SSH_PATH),
         ],
         "Run a flow for each record in an input file.",
     )

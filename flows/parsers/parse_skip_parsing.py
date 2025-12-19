@@ -1,13 +1,4 @@
-#!/usr/bin/env python3
-
-# sourcery skip: avoid-builtin-shadow
 import os
-import sys
-from os.path import abspath, dirname
-
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    __package__ = "flows"
 
 from flows.lib.conditional_import import flow, task  # noqa: E402
 from flows.lib.shared_tasks import get_filenames  # noqa: E402
@@ -33,7 +24,9 @@ def check_tsv_file_exists(config: Config, work_dir: str) -> bool:
 
 
 @flow()
-def parse_skip_parsing(working_yaml: str, work_dir: str, append: bool) -> None:
+def parse_skip_parsing(
+    working_yaml: str, work_dir: str, append: bool, **kwargs
+) -> None:
     """
     Skip parsing.
 
@@ -41,6 +34,7 @@ def parse_skip_parsing(working_yaml: str, work_dir: str, append: bool) -> None:
         working_yaml (str): Path to the working YAML file.
         work_dir (str): Path to the working directory.
         append (bool): Whether to append to the existing TSV file.
+        **kwargs: Additional keyword arguments.
     """
     # Get the config from the YAML file
     config = load_config(working_yaml)

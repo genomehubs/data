@@ -1,16 +1,12 @@
-#!/usr/bin/env python3
-
-# sourcery skip: avoid-builtin-shadow
 import os
-import sys
 from enum import Enum
-from os.path import abspath, dirname
 from typing import Optional
 
 from conditional_import import flow
 from fetch_previous_file_pair import fetch_previous_file_pair
 from shared_args import (
     APPEND,
+    DATA_FREEZE_PATH,
     DRY_RUN,
     MIN_ASSIGNED,
     MIN_VALID,
@@ -23,10 +19,6 @@ from shared_args import (
 )
 from utils import enum_action
 from validate_file_pair import validate_file_pair
-
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    __package__ = "flows"
 
 from flows.parsers.register import register_plugins  # noqa: E402
 
@@ -46,6 +38,7 @@ def fetch_parse_validate(
     yaml_path: str,
     s3_path: str,
     work_dir: str,
+    data_freeze_path: Optional[str] = None,
     taxdump_path: Optional[str] = None,
     append: bool = False,
     dry_run: bool = False,
@@ -60,6 +53,7 @@ def fetch_parse_validate(
         yaml_path (str): Path to the source YAML file.
         s3_path (str): Path to the TSV directory on S3.
         work_dir (str): Path to the working directory.
+        data_freeze_path (str, optional): Path to a data freeze list TSV on S3.
         taxdump_path (str, optional): Path to an NCBI format taxdump.
         append (bool, optional): Flag to append values to an existing TSV file(s).
         dry_run (bool, optional): Flag to run the flow without updating s3/git files.
@@ -74,7 +68,12 @@ def fetch_parse_validate(
         append = False
     working_yaml = os.path.join(work_dir, os.path.basename(yaml_path))
     file_parser = PARSERS.parsers[parser.name]
-    file_parser.func(working_yaml=working_yaml, work_dir=work_dir, append=append)
+    file_parser.func(
+        working_yaml=working_yaml,
+        work_dir=work_dir,
+        append=append,
+        data_freeze_path=data_freeze_path,
+    )
     if dry_run:
         # set s3_path = None to skip copying the validated file to S3/git
         s3_path = None
@@ -99,6 +98,7 @@ if __name__ == "__main__":
             required(YAML_PATH),
             required(S3_PATH),
             WORK_DIR,
+            DATA_FREEZE_PATH,
             TAXDUMP_PATH,
             APPEND,
             DRY_RUN,

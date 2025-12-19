@@ -1,12 +1,24 @@
 #!/usr/bin/python3
 
 import contextlib
+import gzip
+import hashlib
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import tempfile
 from argparse import Action
+from csv import DictReader, Sniffer
 from datetime import datetime
-from typing import Optional
+from io import StringIO
+from typing import Dict, List, Optional
 
 import boto3
 import requests
+from botocore.exceptions import ClientError
+from dateutil import parser
 from genomehubs import utils as gh_utils
 
 
@@ -260,21 +272,26 @@ def set_additional_organelle_values(
         organelle_name (str): The name of the organelle.
     """
     if is_assembled_molecule(seq):
-        organelle["genbankAssmAccession"] = seq[0]["genbank_accession"]
-        organelle["totalSequenceLength"] = seq[0]["length"]
-        organelle["gcPercent"] = seq[0]["gc_percent"]
-        data["processedOrganelleInfo"][organelle_name]["assemblySpan"] = organelle[
-            "totalSequenceLength"
-        ]
-        data["processedOrganelleInfo"][organelle_name]["gcPercent"] = organelle[
-            "gcPercent"
-        ]
-        data["processedOrganelleInfo"][organelle_name]["accession"] = seq[0][
-            "genbank_accession"
-        ]
+        if "genbank_accession" in seq[0]:
+            organelle["genbankAssmAccession"] = seq[0]["genbank_accession"]
+            organelle["totalSequenceLength"] = seq[0]["length"]
+            organelle["gcPercent"] = seq[0]["gc_percent"]
+            data["processedOrganelleInfo"][organelle_name]["assemblySpan"] = organelle[
+                "totalSequenceLength"
+            ]
+            data["processedOrganelleInfo"][organelle_name]["gcPercent"] = organelle[
+                "gcPercent"
+            ]
+            data["processedOrganelleInfo"][organelle_name]["accession"] = seq[0][
+                "genbank_accession"
+            ]
     else:
         data["processedOrganelleInfo"][organelle_name]["scaffolds"] = ";".join(
-            [entry["genbank_accession"] for entry in seq]
+            [
+                entry["genbank_accession"]
+                for entry in seq
+                if "genbank_accession" in entry
+            ]
         )
 
 
@@ -543,6 +560,15 @@ def enum_action(enum_class):
     return EnumAction
 
 
+def safe_get(*args, method="GET", timeout=300, **kwargs):
+    if method == "GET":
+        return requests.get(*args, timeout=timeout, **kwargs)
+    elif method == "POST":
+        return requests.post(*args, timeout=timeout, **kwargs)
+    elif method == "HEAD":
+        return requests.head(*args, timeout=timeout, **kwargs)
+
+
 def find_http_file(http_path: str, filename: str) -> str:
     """
     Find files for the record ID.
@@ -554,7 +580,7 @@ def find_http_file(http_path: str, filename: str) -> str:
     Returns:
         str: Path to the file.
     """
-    response = requests.get(f"{http_path}/{filename}")
+    response = safe_get(f"{http_path}/{filename}")
     return f"{http_path}/{filename}" if response.status_code == 200 else None
 
 
@@ -599,6 +625,183 @@ def find_s3_file(s3_path: list, filename: str) -> str:
     return None
 
 
+def is_safe_path(path: str) -> bool:
+    # Only allow alphanumeric, dash, underscore, dot, slash, colon (for s3), tilde,
+    # and absolute paths.
+    # Tilde (~) and absolute paths are allowed because this function is only used
+    # with trusted internal input.
+    # Directory traversal ('..') is blocked.
+    # Allow URLs (e.g., http://, https://, s3://) and URL-safe characters
+    # URL-safe: alphanumeric, dash, underscore, dot, slash, colon, tilde, percent,
+    #           question, ampersand, equals
+    url_pattern = r"^[\w]+://"
+    url_safe_pattern = r"^[\w\-/.:~%?&=]+$"
+    if re.match(url_pattern, path):
+        return ".." not in path and re.match(url_safe_pattern, path)
+    return ".." not in path if re.match(url_safe_pattern, path) else False
+
+
+def run_quoted(cmd, **kwargs):
+    quoted_cmd = [shlex.quote(str(arg)) for arg in cmd]
+    return subprocess.run(quoted_cmd, **kwargs)
+
+
+def popen_quoted(cmd, **kwargs):
+    quoted_cmd = [shlex.quote(str(arg)) for arg in cmd]
+    return subprocess.Popen(quoted_cmd, **kwargs)
+
+
+def parse_s3_path(s3_path):
+    # Extract bucket name and key from the S3 path
+    bucket, key = s3_path.removeprefix("s3://").split("/", 1)
+    return bucket, key
+
+
+def fetch_from_s3(s3_path: str, local_path: str, gz: bool = False) -> None:
+    """
+    Fetch a file from S3.
+
+    Args:
+        s3_path (str): Path to the remote file on s3.
+        local_path (str): Path to the local file.
+        gz (bool): Whether to gunzip the file after downloading. Defaults to False.
+
+    Returns:
+        None: This function downloads the file from S3 to the local path.
+    """
+    s3 = boto3.client("s3")
+
+    bucket, key = parse_s3_path(s3_path)
+
+    if s3_path.endswith(".gz") and not local_path.endswith(".gz"):
+        gz = True
+
+    # Download the file from S3 to the local path
+    try:
+        if gz:
+            gz_path = f"{local_path}.gz"
+            s3.download_file(Bucket=bucket, Key=key, Filename=gz_path)
+            # Unzip gz_path to local_path, then remove gz_path
+            with gzip.open(gz_path, "rb") as f_in, open(local_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+            os.remove(gz_path)
+        else:
+            s3.download_file(Bucket=bucket, Key=key, Filename=local_path)
+    except ClientError as e:
+        print(f"Error downloading {s3_path} to {local_path}: {e}")
+        raise e
+
+
+def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
+    """
+    Upload a file to S3.
+
+    Args:
+        local_path (str): Path to the local file.
+        s3_path (str): Path to the remote file on s3.
+        gz (bool): Whether to gzip the file before uploading. Defaults to False.
+
+    Returns:
+        None: This function uploads the local file to S3.
+    """
+
+    if not is_safe_path(local_path):
+        raise ValueError(f"Unsafe local path: {local_path}")
+    if not is_safe_path(s3_path):
+        raise ValueError(f"Unsafe s3 path: {s3_path}")
+
+    if s3_path.endswith(".gz") and not local_path.endswith(".gz"):
+        gz = True
+
+    try:
+        if gz:
+            gz_path = f"{local_path}.gz"
+            with open(local_path, "rb") as f_in, gzip.open(gz_path, "wb") as f_out:
+                f_out.write(f_in.read())
+            try:
+                # use s3cmd for uploads due to issues with boto3 and large files
+                cmd = [
+                    "s3cmd",
+                    "put",
+                    "--acl-public",
+                    gz_path,
+                    s3_path,
+                ]
+                result = run_quoted(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode != 0:
+                    print(
+                        (
+                            f"Error uploading {local_path} to {s3_path} "
+                            f"with s3cmd: {result.stderr}"
+                        )
+                    )
+                    raise RuntimeError(f"s3cmd upload failed: {result.stderr}")
+            finally:
+                if os.path.exists(gz_path):
+                    os.remove(gz_path)
+        else:
+            # use s3cmd for uploads due to issues with boto3 and large files
+            cmd = [
+                "s3cmd",
+                "put",
+                "--acl-public",
+                local_path,
+                s3_path,
+            ]
+            result = run_quoted(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                print(
+                    (
+                        f"Error uploading {local_path} to {s3_path} "
+                        f"with s3cmd: {result.stderr}"
+                    )
+                )
+                raise RuntimeError(f"s3cmd upload failed: {result.stderr}")
+    except Exception as e:
+        print(f"Error uploading {local_path} to {s3_path}: {e}")
+        raise e
+
+
+def parse_s3_file(data_freeze_path: str) -> dict:
+    """
+    Fetch and parse a 2-column TSV from the given S3 path.
+
+    Args:
+        data_freeze_path (str): The S3 path to the TSV file.
+    Returns:
+        dict: A dictionary mapping column 1 keys to their corresponding values.
+
+    """
+    # from s3 to temporary file
+    print(f"Fetching data freeze file from {data_freeze_path}")
+    with tempfile.NamedTemporaryFile() as tmp_file:
+        local_path = tmp_file.name
+        fetch_from_s3(data_freeze_path, local_path)
+        parsed = {}
+        with open(local_path, "r") as f:
+            for line in f:
+                parts = [p.strip() for p in line.strip().split("\t")]
+                key = parts[0]
+                if len(parts) < 2:
+                    parsed[key] = []
+                    continue
+                # For each value column, split on comma and store as list
+                value_lists = [
+                    [v.strip() for v in col.split(",") if v.strip()]
+                    for col in parts[1:]
+                ]
+                parsed[key] = (
+                    value_lists
+                    if len(value_lists) > 1
+                    else (value_lists[0] if value_lists else [])
+                )
+    return parsed
+
+
 def set_index_name(
     index_type: str,
     hub_name: str,
@@ -628,3 +831,152 @@ def set_index_name(
     return (
         f"{hub_name}{separator}{taxonomy_name}{separator}{index_type}{separator}{date}"
     )
+
+
+def parse_tsv(text: str) -> List[Dict[str, str]]:
+    """
+    Parse a TSV string into a list of dictionaries.
+
+    Args:
+        text (str): The TSV string to parse.
+
+    Returns:
+        List[Dict[str, str]]: A list of dictionaries representing the rows.
+    """
+    sniffer = Sniffer()
+    dialect = sniffer.sniff(text)
+    reader = DictReader(StringIO(text), dialect=dialect)
+    return list(reader)
+
+
+def last_modified_git_remote(http_path: str) -> Optional[int]:
+    """
+    Get the last modified date of a file in a git repository.
+
+    Args:
+        http_path (str): Path to the HTTP file.
+
+    Returns:
+        Optional[int]: Last modified date of the file, or None if not found.
+    """
+    try:
+        if not http_path.startswith("https://gitlab.com/"):
+            print(f"Malformed GitLab URL (missing prefix): {http_path}")
+            return None
+        project_path = http_path.removeprefix("https://gitlab.com/")
+        project_path = project_path.removesuffix(".git")
+        parts = project_path.split("/")
+        if len(parts) < 6:
+            print(f"Malformed GitLab URL (not enough parts): {http_path}")
+            return None
+        project = "%2F".join(parts[:2])
+        ref = parts[4]
+        file = "%2F".join(parts[5:]).split("?")[0]
+        api_url = (
+            f"https://gitlab.com/api/v4/projects/{project}/repository/commits"
+            f"?ref_name={ref}&path={file}&per_page=1"
+        )
+        response = safe_get(api_url)
+        if response.status_code == 200:
+            commits = response.json()
+            if commits and commits[0].get("committed_date"):
+                dt = parser.isoparse(commits[0]["committed_date"])
+                return int(dt.timestamp())
+        else:
+            response = safe_get(http_path, method="HEAD", allow_redirects=True)
+            if response.status_code == 200:
+                if last_modified := response.headers.get("Last-Modified", None):
+                    dt = parser.parse(last_modified)
+                    return int(dt.timestamp())
+                return None
+    except Exception as e:
+        print(f"Error parsing GitLab URL or fetching commit info: {e}")
+    return None
+
+
+def last_modified_http(http_path: str) -> Optional[int]:
+    """
+    Get the last modified date of a file.
+
+    Args:
+        http_path (str): Path to the HTTP file.
+
+    Returns:
+        Optional[int]: Last modified date of the file, or None if not found.
+    """
+    if "gitlab.com" in http_path:
+        return last_modified_git_remote(http_path)
+    response = safe_get(http_path, method="HEAD", allow_redirects=True)
+    if response.status_code == 200:
+        if last_modified := response.headers.get("Last-Modified", None):
+            dt = parser.parse(last_modified)
+            return int(dt.timestamp())
+        return None
+    return None
+
+
+def last_modified_s3(s3_path: str) -> Optional[int]:
+    """
+    Get the last modified date of a file on S3.
+
+    Args:
+        s3_path (str): Path to the remote file on s3.
+
+    Returns:
+        Optional[int]: Last modified date of the file, or None if not found.
+    """
+    s3 = boto3.client("s3")
+
+    bucket, key = parse_s3_path(s3_path)
+
+    # Return None if the remote file does not exist
+    try:
+        response = s3.head_object(Bucket=bucket, Key=key)
+        last_modified = response.get("LastModified", None)
+        return int(last_modified.timestamp()) if last_modified is not None else None
+    except ClientError:
+        return None
+
+
+def last_modified(local_path: str) -> Optional[int]:
+    """
+    Get the last modified date of a local file.
+
+    Args:
+        local_path (str): Path to the local file.
+
+    Returns:
+        Optional[int]: Last modified date of the file as a Unix timestamp, or None if
+            the file does not exist.
+    """
+    if not os.path.exists(local_path):
+        return None
+    mtime = os.path.getmtime(local_path)
+    return int(mtime)
+
+
+def is_local_file_current_http(local_path: str, http_path: str) -> bool:
+    """
+    Compare the last modified date of a local file with a remote file on HTTP.
+
+    Args:
+        local_path (str): Path to the local file.
+        http_path (str): Path to the HTTP directory.
+
+    Returns:
+        bool: True if the local file is up-to-date, False otherwise.
+    """
+    local_date = last_modified(local_path)
+    remote_date = last_modified_http(http_path)
+    print(f"Local date: {local_date}, Remote date: {remote_date}")
+    if local_date is None or remote_date is None:
+        return False
+    return local_date >= remote_date
+
+
+def generate_md5(file_path):
+    hash_md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()

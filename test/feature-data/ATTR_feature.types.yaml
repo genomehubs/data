@@ -1,0 +1,222 @@
+attributes:
+  analysis_name:
+    description: Non-unique analysis name
+    display_level: 1
+    display_name: Analysis name
+    display_group: analysis
+    type: keyword
+  assembly_id:
+    description: Assembly ID
+    display_level: 1
+    display_name: Assembly ID
+    display_group: coordinates
+    type: keyword
+  coverage:
+    bins:
+      min: 0
+      max: 7
+      count: 7
+      scale: log10
+    constraint:
+      min: 0.01
+    description: Sequencing coverage
+    display_level: 1
+    display_name: Coverage
+    display_group: stats
+    type: 2dp
+  end:
+    bins:
+      min: 1
+      max: 11
+      count: 10
+      scale: log10
+    constraint:
+      min: 1
+    description: Feature end position (1-indexed)
+    display_level: 1
+    display_name: End
+    display_group: coordinates
+    type: long
+  feature_id:
+    description: Feature ID
+    display_level: 2
+    display_name: Feature ID
+    display_group: coordinates
+    type: keyword
+  feature_type:
+    constraint:
+      enum:
+        - archaea_odb10-busco-gene
+        - arthropoda_odb10-busco-gene
+        - bacteria_odb10-busco-gene
+        - busco-gene
+        - chromosome
+        - contig
+        - eukaryota_odb10-busco-gene
+        - gene
+        - metazoa_odb10-busco-gene
+        - scaffold
+        - sequence
+        - toplevel
+        - window
+        - window-0.01
+        - window-0.02
+        - window-0.05
+        - window-0.1
+        - window-1000
+        - window-10000
+        - window-100000
+        - window-1000000
+    description: Feature type
+    display_level: 1
+    display_name: Feature type
+    display_group: coordinates
+    type: keyword
+  gc:
+    bins:
+      min: 0
+      max: 1
+      count: 10
+      scale: linear
+    constraint:
+      max: 1
+      min: 0
+    description: Proportional sequence GC content = GC/ATGC
+    display_level: 1
+    display_name: GC content
+    display_group: stats
+    type: 3dp
+  length:
+    bins:
+      min: 1
+      max: 11
+      count: 10
+      scale: log10
+    constraint:
+      min: 0
+    description: Feature length
+    display_level: 1
+    display_name: Feature length
+    display_group: stats
+    type: long
+    units: bp
+  masked:
+    bins:
+      min: 0
+      max: 1
+      count: 10
+      scale: linear
+    constraint:
+      max: 1
+      min: 0
+    description: Proportional masked seqence acgtn/acgtn+ACGTN
+    display_level: 1
+    display_name: Masked proportion
+    display_group: stats
+    type: 3dp
+  midpoint:
+    bins:
+      min: 1
+      max: 11
+      count: 10
+      scale: log10
+    constraint:
+      min: 0
+    description: Feature midpoint
+    display_level: 1
+    display_name: Feature midpoint
+    display_group: stats
+    type: long
+    units: bp
+  midpoint_proportion:
+    bins:
+      min: 0
+      max: 1
+      count: 10
+      scale: linear
+    constraint:
+      max: 1
+      min: 0
+    description: Proportional position of feature midpoint
+    display_level: 1
+    display_name: Midpoint proportion
+    display_group: stats
+    type: float
+  name:
+    description: Feature name
+    display_level: 2
+    display_name: Feature name
+    display_group: feature
+    type: keyword
+  score:
+    bins:
+      min: 0
+      max: 10000
+      count: 10
+      scale: linear
+    constraint:
+      min: 1
+      max: 100000
+    description: Feature score
+    display_level: 2
+    display_name: Feature score
+    display_group: busco
+    type: half_float
+  seq_proportion:
+    bins:
+      min: 0
+      max: 1
+      count: 10
+      scale: linear
+    constraint:
+      max: 1
+      min: 0
+    description: Proportional sequence length relative to full assembly span
+    display_level: 1
+    display_name: Proportional length
+    display_group: stats
+    type: float
+  sequence_id:
+    description: Sequence ID
+    display_level: 1
+    display_name: Sequence ID
+    display_group: coordinates
+    type: keyword
+  start:
+    bins:
+      min: 1
+      max: 11
+      count: 10
+      scale: log10
+    constraint:
+      min: 1
+    description: Feature start position (1-indexed)
+    display_level: 1
+    display_name: Start
+    display_group: coordinates
+    type: long
+  status:
+    constraint:
+      enum:
+        - complete
+        - duplicated
+        - fragmented
+    description: BUSCO status
+    display_level: 2
+    display_name: BUSCO status
+    display_group: busco
+    type: keyword
+  strand:
+    bins:
+      min: -1
+      max: 1
+      count: 3
+      scale: linear
+    constraint:
+      min: -1
+      max: 1
+    description: Strand
+    display_level: 1
+    display_name: Strand
+    display_group: coordinates
+    type: byte

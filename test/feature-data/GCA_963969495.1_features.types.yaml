@@ -1,0 +1,108 @@
+file:
+  format: tsv
+  header: true
+  name: GCA_963969495.1_features.tsv
+  needs: ATTR_feature.types.yaml
+  source: null
+analysis:
+  analysis_id: assembly-GCA_963969495.1
+  assembly_id: GCA_963969495.1
+  taxon_id: '2922061'
+  description: Public assembly GCA_963969495.1
+  name: assembly
+  title: Public assembly GCA_963969495.1
+attributes:
+  start:
+    header: start
+    source: null
+    type: long
+  midpoint:
+    header: midpoint
+    source: null
+    type: long
+  seq_proportion:
+    header: seq_proportion
+    source: null
+    type: float
+  status:
+    header: status
+    separator: ','
+    source: null
+    type: keyword
+  sequence_id:
+    header: sequence_id
+    source: null
+    type: keyword
+  gc:
+    header: gc
+    source: null
+    type: 3dp
+  score:
+    header: score
+    source: null
+    type: half_float
+  length:
+    header: length
+    source: null
+    type: long
+  feature_id:
+    header: feature_id
+    source: null
+    type: keyword
+  sequence_name:
+    header: sequence_name
+    separator: ','
+    source: null
+    type: keyword
+  end:
+    header: end
+    source: null
+    type: long
+  midpoint_proportion:
+    header: midpoint_proportion
+    source: null
+    type: float
+  name:
+    header: name
+    separator: ','
+    source: null
+    type: keyword
+  strand:
+    header: strand
+    source: null
+    type: byte
+  feature_type:
+    header: feature_type
+    separator: ','
+    source: null
+    type: keyword
+  taxon_id:
+    header: taxon_id
+    source: null
+    type: keyword
+  assembly_id:
+    header: assembly_id
+    source: null
+    type: keyword
+  masked:
+    header: masked
+    source: null
+    type: 3dp
+  coverage:
+    header: coverage
+    source: null
+    type: 2dp
+taxonomy:
+  taxon_id:
+    header: taxon_id
+    source: null
+    type: keyword
+features:
+  feature_id:
+    header: feature_id
+    source: null
+    type: keyword
+  assembly_id:
+    header: assembly_id
+    source: null
+    type: keyword

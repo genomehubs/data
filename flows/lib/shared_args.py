@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Arguments shared between scripts.
 
@@ -38,6 +37,14 @@ ASSEMBLY_ID = {
     "flags": ["--assembly_id"],
     "keys": {
         "help": "Assembly ID.",
+        "type": str,
+    },
+}
+
+DATA_FREEZE_PATH = {
+    "flags": ["--data_freeze_path"],
+    "keys": {
+        "help": "Path to data freeze list TSV on S3.",
         "type": str,
     },
 }

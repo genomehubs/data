@@ -1,0 +1,18 @@
+path: /Users/rchallis/Downloads/tmp/taxdump
+out: test/taxonomy/isopodb/ncbi
+taxonomy_format: ncbi
+root_taxon_id:
+  - 2922061
+  - 92525
+  - 2067965
+  - 2613951
+leaf_taxon_id:
+  - 2922061
+  - 92525
+  - 2067965
+  - 2613951
+base_taxon_id: 2759
+name_classes:
+  - scientific name
+  - synonym
+xref_label: ncbi
