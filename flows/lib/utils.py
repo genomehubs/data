@@ -191,6 +191,16 @@ def convert_keys_to_camel_case(data: dict) -> dict:
     return converted_data
 
 
+def parse_s3_file(s3_path: str) -> dict:
+    """
+    Parse S3 file path (stub for compatibility).
+
+    This function is imported by parse_ncbi_assemblies but not used in backfill.
+    Returns empty dict as placeholder.
+    """
+    return {}
+
+
 def set_organelle_name(seq: dict) -> Optional[str]:
     """
     Determines the organelle type (mitochondrion or plastid) based on the assigned

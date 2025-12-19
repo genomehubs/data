@@ -1,24 +1,16 @@
-#!/usr/bin/env python3
-
-# sourcery skip: avoid-builtin-shadow
 import json
 import os
+import re
 import subprocess
-import sys
 from collections import defaultdict
 from glob import glob
-from os.path import abspath, dirname
 from typing import Generator, Optional
 
 from genomehubs import utils as gh_utils
 
-if __name__ == "__main__" and __package__ is None:
-    sys.path.insert(0, dirname(dirname(dirname(abspath(__file__)))))
-    __package__ = "flows"
-
 from flows.lib import utils  # noqa: E402
 from flows.lib.conditional_import import flow, run_count, task  # noqa: E402
-from flows.lib.utils import Config, Parser  # noqa: E402
+from flows.lib.utils import Config, Parser, parse_s3_file  # noqa: E402
 from flows.parsers.args import parse_args  # noqa: E402
 
 
@@ -53,7 +45,9 @@ def fetch_ncbi_datasets_sequences(
     Yields:
         dict: The sequence report data as a JSON object, one line at a time.
     """
-    result = subprocess.run(
+    if not utils.is_safe_path(accession):
+        raise ValueError(f"Unsafe accession: {accession}")
+    result = utils.run_quoted(
         [
             "datasets",
             "summary",
@@ -74,6 +68,28 @@ def fetch_ncbi_datasets_sequences(
         if not line:
             continue
         yield json.loads(line)
+
+
+def is_atypical_assembly(report: dict, parsed: dict) -> bool:
+    """
+    Check if an assembly is atypical.
+
+    Args:
+        report (dict): A dictionary containing the assembly information.
+        parsed (dict): A dictionary containing parsed data.
+
+    Returns:
+        bool: True if the assembly is atypical, False otherwise.
+    """
+    if "assemblyInfo" not in report:
+        return True
+    if report["assemblyInfo"].get("atypical", {}).get("isAtypical", False):
+        # delete from parsed if present
+        accession = report["accession"]
+        if accession in parsed:
+            del parsed[accession]
+        return True
+    return False
 
 
 def process_assembly_report(
@@ -98,6 +114,9 @@ def process_assembly_report(
     Returns:
         dict: The updated report dictionary.
     """
+    # Uncomment to filter atypical assemblies
+    # if is_atypical_assembly(report, parsed):
+    #     return None
     processed_report = {**report, "processedAssemblyInfo": {"organelle": "nucleus"}}
     if "pairedAccession" in report:
         if processed_report["pairedAccession"].startswith("GCF_"):
@@ -181,7 +200,6 @@ def fetch_and_parse_sequence_report(data: dict):
                     chromosomes.append(seq)
     except subprocess.TimeoutExpired:
         print(f"ERROR: Timeout fetching sequence report for {accession}")
-        print(chromosomes)
         return
     utils.add_organelle_entries(data, organelles)
     utils.check_ebp_criteria(data, span, chromosomes, assigned_span)
@@ -216,6 +234,8 @@ def add_report_to_parsed_reports(
                 continue
             linked_row = parsed[acc]
             if accession not in linked_row["linkedAssembly"]:
+                if not isinstance(linked_row["linkedAssembly"], list):
+                    linked_row["linkedAssembly"] = []
                 linked_row["linkedAssembly"].append(accession)
             if acc not in row["linkedAssembly"]:
                 row["linkedAssembly"].append(acc)
@@ -333,21 +353,108 @@ def process_assembly_reports(
         None
     """
     for report in parse_assembly_report(jsonl_path=jsonl_path):
-        processed_report = process_assembly_report(
-            report, previous_report, config, parsed
-        )
-        if use_previous_report(processed_report, parsed, config):
+        try:
+            print(f"Processing report for {report.get('accession', 'unknown')}")
+            processed_report = process_assembly_report(
+                report, previous_report, config, parsed
+            )
+            if processed_report is None or use_previous_report(
+                processed_report, parsed, config
+            ):
+                continue
+            fetch_and_parse_sequence_report(processed_report)
+            append_features(processed_report, config)
+            add_report_to_parsed_reports(parsed, processed_report, config, biosamples)
+            if previous_report is not None:
+                previous_report = processed_report
+        except Exception as e:
+            print(
+                (
+                    f"Error processing report for "
+                    f"{report.get('accession', 'unknown')}: "
+                    f"{e} (line {e.__traceback__.tb_lineno})"
+                )
+            )
             continue
-        fetch_and_parse_sequence_report(processed_report)
-        append_features(processed_report, config)
-        add_report_to_parsed_reports(parsed, processed_report, config, biosamples)
-        if previous_report is not None:
-            previous_report = processed_report
+
+
+@task(log_prints=True)
+def parse_data_freeze_file(data_freeze_path: str) -> dict:
+    """
+    Fetch and parse a 2-column TSV with the data freeze list of assemblies and their
+    respective status from the given S3 path.
+
+    Args:
+        data_freeze_path (str): The S3 path to the data freeze list TSV file.
+    Returns:
+        dict: A dictionary mapping assembly accessions to their freeze subsets.
+
+    """
+    # from s3 to temporary file
+    print(f"Fetching data freeze file from {data_freeze_path}")
+    data_freeze = parse_s3_file(data_freeze_path)
+    print(f"Parsed {len(data_freeze)} entries from data freeze file")
+    return data_freeze
+
+
+@task()
+def set_data_freeze_default(parsed: dict, data_freeze_name: str):
+    """
+    Set the default data freeze information for all assemblies.
+
+    Args:
+        parsed (dict): A dictionary containing parsed data.
+        data_freeze_name (str): The name of the default data freeze.
+    """
+    for line in parsed.values():
+        line["dataFreeze"] = [data_freeze_name]
+        line["assemblyID"] = line["genbankAccession"]
+
+
+@task(log_prints=True)
+def process_datafreeze_info(processed_report: dict, data_freeze: dict, config: Config):
+    """
+    Process the data freeze information for a given assembly report.
+    Rename the assembly
+
+    Args:
+        processed_report (dict): A dictionary containing processed assembly data.
+        data_freeze (dict): A dictionary containing data freeze information.
+    """
+    data_freeze_name = (
+        re.sub(r"\.tsv(\.gz)?$", "", os.path.basename(config.meta["file_name"]))
+        if config.meta["file_name"]
+        else "data_freeze"
+    )
+    print(f"Processing data freeze info for {data_freeze_name}")
+    for line in processed_report.values():
+        print(
+            f"Processing data freeze info for {line['refseqAccession']} - "
+            f"{line['genbankAccession']}"
+        )
+        status = data_freeze.get(line["refseqAccession"]) or data_freeze.get(
+            line["genbankAccession"]
+        )
+        if not status:
+            continue
+        line["dataFreeze"] = status
+
+        accession_name = (
+            line["refseqAccession"]
+            if line["refseqAccession"] in data_freeze
+            else line["genbankAccession"]
+        )
+        line["assemblyID"] = f"{accession_name}_{data_freeze_name}"
 
 
 @flow(log_prints=True)
 def parse_ncbi_assemblies(
-    input_path: str, yaml_path: str, append: bool, feature_file: Optional[str] = None
+    input_path: str,
+    yaml_path: str,
+    append: bool,
+    feature_file: Optional[str] = None,
+    data_freeze_path: Optional[str] = None,
+    **kwargs,
 ):
     """
     Parse NCBI datasets assembly data.
@@ -357,6 +464,8 @@ def parse_ncbi_assemblies(
         yaml_path (str): Path to the YAML configuration file.
         append (bool): Flag to append values to an existing TSV file(s).
         feature_file (str): Path to the feature file.
+        data_freeze_path (str): Path to data freeze list TSV on S3.
+        **kwargs: Additional keyword arguments.
     """
     config = utils.load_config(
         config_file=yaml_path,
@@ -365,22 +474,39 @@ def parse_ncbi_assemblies(
     )
     if feature_file is not None:
         set_up_feature_file(config)
+
     biosamples = {}
     parsed = {}
     previous_report = {} if append else None
     process_assembly_reports(input_path, config, biosamples, parsed, previous_report)
     set_representative_assemblies(parsed, biosamples)
+
+    if data_freeze_path is None:
+        set_data_freeze_default(parsed, data_freeze_name="latest")
+    else:
+        data_freeze = parse_data_freeze_file(
+            data_freeze_path
+        )  # This returns the data freeze dictionary
+        process_datafreeze_info(parsed, data_freeze, config)
     write_to_tsv(parsed, config)
 
 
 def parse_ncbi_assemblies_wrapper(
-    working_yaml: str, work_dir: str, append: bool
+    working_yaml: str,
+    work_dir: str,
+    append: bool,
+    data_freeze_path: Optional[str] = None,
+    **kwargs,
 ) -> None:
     """
     Wrapper function to parse the NCBI assemblies JSONL file.
 
     Args:
         working_yaml (str): Path to the working YAML file.
+        work_dir (str): Path to the working directory.
+        append (bool): Whether to append to the existing TSV file.
+        data_freeze_path (str, optional): Path to a data freeze list TSV on S3.
+        **kwargs: Additional keyword arguments.
     """
     # use glob to find the jsonl file in the working directory
     glob_path = os.path.join(work_dir, "*.jsonl")
@@ -391,7 +517,12 @@ def parse_ncbi_assemblies_wrapper(
     # rais error if more than one jsonl file is found
     if len(paths) > 1:
         raise ValueError(f"More than one jsonl file found in {work_dir}")
-    parse_ncbi_assemblies(input_path=paths[0], yaml_path=working_yaml, append=append)
+    parse_ncbi_assemblies(
+        input_path=paths[0],
+        yaml_path=working_yaml,
+        append=append,
+        data_freeze_path=data_freeze_path,
+    )
 
 
 def plugin():
