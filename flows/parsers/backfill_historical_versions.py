@@ -19,7 +19,7 @@ Caching:
 - On re-run: only fetches NEW assemblies
 
 Usage:
-    python flows/parsers/backfill_historical_versions.py \\
+    python -m flows.parsers.backfill_historical_versions \\
         --input flows/parsers/eukaryota/ncbi_dataset/data/assembly_data_report.jsonl \\
         --config configs/assembly_historical.yaml \\
         --checkpoint tmp/backfill_checkpoint.json

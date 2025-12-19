@@ -44,16 +44,14 @@ Test the complete backfill process on 3 assemblies:
 
 ```bash
 export SKIP_PREFECT=true
-python flows/parsers/backfill_historical_versions.py 
-    --input tests/test_data/assembly_test_sample.jsonl 
-    --config configs/assembly_historical.yaml 
+python -m flows.parsers.backfill_historical_versions \
+    --input tests/test_data/assembly_test_sample.jsonl \
+    --config configs/assembly_historical.yaml \
     --checkpoint tests/test_data/test_checkpoint.json
-
 ```
 
 ```powershell
 $env:SKIP_PREFECT="true"
-$env:PYTHONPATH="."
-python flows/parsers/backfill_historical_versions.py --input tests/test_data/assembly_test_sample.jsonl --config configs/assembly_historical.yaml --checkpoint tests/test_data/test_checkpoint.json
+python -m flows.parsers.backfill_historical_versions --input tests/test_data/assembly_test_sample.jsonl --config configs/assembly_historical.yaml --checkpoint tests/test_data/test_checkpoint.json
 ```
 
