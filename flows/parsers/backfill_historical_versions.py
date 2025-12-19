@@ -20,8 +20,8 @@ Caching:
 
 Usage:
     python -m flows.parsers.backfill_historical_versions \\
-        --input flows/parsers/eukaryota/ncbi_dataset/data/assembly_data_report.jsonl \\
-        --config configs/assembly_historical.yaml \\
+        --input_path flows/parsers/eukaryota/ncbi_dataset/data/assembly_data_report.jsonl \\
+        --yaml_path configs/assembly_historical.yaml \\
         --checkpoint tmp/backfill_checkpoint.json
 """
 
@@ -449,31 +449,26 @@ def backfill_historical_versions(
 # =============================================================================
 
 if __name__ == '__main__':
-    import argparse
+    from flows.lib.shared_args import parse_args as _parse_args, required, default
+    from flows.lib.shared_args import INPUT_PATH, YAML_PATH
 
-    parser = argparse.ArgumentParser(
+    # Define checkpoint argument
+    CHECKPOINT = {
+        "flags": ["--checkpoint"],
+        "keys": {"help": "Checkpoint file for resuming", "type": str}
+    }
+
+    args = _parse_args(
+        [
+            required(INPUT_PATH),
+            required(YAML_PATH),
+            default(CHECKPOINT, 'tmp/backfill_checkpoint.json')
+        ],
         description='One-time historical backfill for assembly versions'
     )
-    parser.add_argument(
-        '--input',
-        required=True,
-        help='Input JSONL file (assembly_data_report.jsonl)'
-    )
-    parser.add_argument(
-        '--config',
-        required=True,
-        help='Config YAML file (assembly_historical.yaml)'
-    )
-    parser.add_argument(
-        '--checkpoint',
-        default='tmp/backfill_checkpoint.json',
-        help='Checkpoint file for resuming'
-    )
-
-    args = parser.parse_args()
 
     backfill_historical_versions(
-        input_jsonl=args.input,
-        config_yaml=args.config,
+        input_jsonl=args.input_path,
+        config_yaml=args.yaml_path,
         checkpoint_file=args.checkpoint
     )
