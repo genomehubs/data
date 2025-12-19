@@ -2,6 +2,9 @@
 # This config defines the schema for assembly_historical.tsv
 # which contains all superseded assembly versions
 
+needs:
+  - ncbi_datasets_eukaryota.types.yaml
+
 attributes:
   assembly_level:
     header: assemblyLevel
@@ -156,7 +159,7 @@ file:
       - taxon_id
   format: tsv
   header: true
-  name: ../outputs/assembly_historical.tsv
+  name: assembly_historical.tsv
   source: INSDC
   source_url_stub: https://www.ncbi.nlm.nih.gov/assembly/
 
