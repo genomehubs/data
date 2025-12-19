@@ -149,6 +149,13 @@ def find_all_assembly_versions(base_accession: str) -> List[Dict]:
 
             # Fetch from NCBI datasets
             try:
+                # Validate accession format to prevent command injection
+                # Pattern: GC[AF]_9digits.version (e.g., GCA_000001405.39)
+                version_pattern_strict = r"^GC[AF]_\d{9}\.\d+$"
+                if not re.match(version_pattern_strict, version_acc):
+                    print(f"    Skipping unexpected accession format: {version_acc}")
+                    continue
+
                 cmd = ["datasets", "summary", "genome", "accession", version_acc, "--as-json-lines"]
                 result = subprocess.run(
                     cmd,
