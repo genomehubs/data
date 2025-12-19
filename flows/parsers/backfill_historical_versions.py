@@ -25,7 +25,6 @@ Usage:
         --checkpoint tmp/backfill_checkpoint.json
 """
 
-import hashlib
 import json
 import os
 import re
@@ -58,8 +57,7 @@ def setup_cache_directories():
 
 def get_cache_path(cache_type: str, identifier: str) -> str:
     """Generate cache file path for given type and identifier."""
-    safe_id = hashlib.md5(identifier.encode()).hexdigest()[:16]
-    return f"tmp/backfill_cache/{cache_type}/{identifier}_{safe_id}.json"
+    return f"tmp/backfill_cache/{cache_type}/{identifier}.json"
 
 
 def load_from_cache(cache_path: str, max_age_days: int = 30) -> Dict:
