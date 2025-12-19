@@ -74,7 +74,7 @@ deployments:
         match:
           prefect.resource.type: ncbi.datasets
           prefect.resource.matches.previous: "no"
-          prefect.resource.id": fetch.datasets./home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}/ncbi_datasets_eukaryota.jsonl"
+          prefect.resource.id: "fetch.datasets./home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}/ncbi_datasets_eukaryota.jsonl"
         expect:
           - update.ncbi.datasets.finished
         parameters:
@@ -193,7 +193,7 @@ deployments:
         match:
           prefect.resource.type: ncbi.datasets
           prefect.resource.matches.previous: "no"
-          prefect.resource.id": fetch.datasets./home/ubuntu/tmp/test/assembly-data-vgp-phase1/vgp_phase1.jsonl"
+          prefect.resource.id: "fetch.datasets./home/ubuntu/tmp/test/assembly-data-vgp-phase1/vgp_phase1.jsonl"
         expect:
           - update.ncbi.datasets.finished
         parameters:
