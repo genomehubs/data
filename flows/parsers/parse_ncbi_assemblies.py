@@ -93,7 +93,11 @@ def is_atypical_assembly(report: dict, parsed: dict) -> bool:
 
 
 def process_assembly_report(
-    report: dict, previous_report: Optional[dict], config: Config, parsed: dict
+    report: dict,
+    previous_report: Optional[dict],
+    config: Config,
+    parsed: dict,
+    version_status: str = "current"
 ) -> dict:
     """Process assembly level information.
 
@@ -110,6 +114,9 @@ def process_assembly_report(
         previous one.
         config (Config): A Config object containing the configuration data.
         parsed (dict): A dictionary containing parsed data.
+        version_status (str): Version status - "current" (default) or "superseded"
+            for historical versions. Defaults to "current" to maintain backward
+            compatibility with existing code.
 
     Returns:
         dict: The updated report dictionary.
@@ -117,7 +124,10 @@ def process_assembly_report(
     # Uncomment to filter atypical assemblies
     # if is_atypical_assembly(report, parsed):
     #     return None
-    processed_report = {**report, "processedAssemblyInfo": {"organelle": "nucleus"}}
+    processed_report = {**report, "processedAssemblyInfo": {
+        "organelle": "nucleus",
+        "versionStatus": version_status
+    }}
     if "pairedAccession" in report:
         if processed_report["pairedAccession"].startswith("GCF_"):
             processed_report["processedAssemblyInfo"]["refseqAccession"] = report[
