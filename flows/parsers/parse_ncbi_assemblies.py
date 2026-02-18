@@ -330,6 +330,33 @@ def set_representative_assemblies(parsed: dict, biosamples: dict):
             parsed[most_recent]["biosampleRepresentative"] = 1
 
 
+def _sequence_derived_fields(report: dict) -> dict:
+    """Keep only fields derived from the sequence report."""
+    keep = {
+        "organelles",
+        "processedOrganelleInfo",
+        "chromosomes",
+        "processedAssemblyStats",
+    }
+    return {k: report[k] for k in keep if k in report}
+
+
+def get_cached_sequence_fields(
+    processed_report: dict, config: Config
+) -> Optional[dict]:
+    """Return cached sequence-derived fields if releaseDate matches."""
+    accession = processed_report["processedAssemblyInfo"]["genbankAccession"]
+    if accession not in config.previous_parsed:
+        return None
+    previous_report = config.previous_parsed[accession]
+    if (
+        processed_report["assemblyInfo"]["releaseDate"]
+        != previous_report["releaseDate"]
+    ):
+        return None
+    return _sequence_derived_fields(previous_report)
+
+
 @task()
 def process_assembly_reports(
     jsonl_path: str,
@@ -358,13 +385,19 @@ def process_assembly_reports(
             processed_report = process_assembly_report(
                 report, previous_report, config, parsed
             )
-            if processed_report is None or use_previous_report(
-                processed_report, parsed, config
-            ):
+            if processed_report is None:
                 continue
-            fetch_and_parse_sequence_report(processed_report)
+
+            # reuse expensive sequence-derived values only
+            cached_seq = get_cached_sequence_fields(processed_report, config)
+            if cached_seq is not None:
+                processed_report.update(cached_seq)
+            else:
+                fetch_and_parse_sequence_report(processed_report)
+
             append_features(processed_report, config)
             add_report_to_parsed_reports(parsed, processed_report, config, biosamples)
+
             if previous_report is not None:
                 previous_report = processed_report
         except Exception as e:
