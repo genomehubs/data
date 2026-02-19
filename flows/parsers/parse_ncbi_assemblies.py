@@ -419,7 +419,9 @@ def process_assembly_reports(
             processed_report = process_assembly_report(
                 report, previous_report, config, parsed
             )
-            if processed_report is None:
+            if processed_report is None or use_previous_report(
+                processed_report, parsed, config
+            ):
                 continue
 
             if cached_fields := get_cached_sequence_fields(processed_report, config):
