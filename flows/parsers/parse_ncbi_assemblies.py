@@ -13,6 +13,14 @@ from flows.lib.conditional_import import flow, run_count, task  # noqa: E402
 from flows.lib.utils import Config, Parser, parse_s3_file  # noqa: E402
 from flows.parsers.args import parse_args  # noqa: E402
 
+# Roots that contain expensive sequence-derived data
+SEQUENCE_DERIVED_ROOTS = {
+    "processedAssemblyStats",
+    "processedOrganelleInfo",
+    "chromosomes",
+    "organelles",
+}
+
 
 def parse_assembly_report(jsonl_path: str) -> Generator[dict, None, None]:
     """
@@ -330,31 +338,57 @@ def set_representative_assemblies(parsed: dict, biosamples: dict):
             parsed[most_recent]["biosampleRepresentative"] = 1
 
 
-def _sequence_derived_fields(report: dict) -> dict:
-    """Keep only fields derived from the sequence report."""
-    keep = {
-        "organelles",
-        "processedOrganelleInfo",
-        "chromosomes",
-        "processedAssemblyStats",
-    }
-    return {k: report[k] for k in keep if k in report}
+def _iter_config_paths(config: Config) -> Generator[str, None, None]:
+    """Yield all 'path' values from the types config."""
+    types_cfg = config.config or {}
+    for section in ("attributes", "identifiers", "metadata", "taxonomy", "taxon_names"):
+        for item in types_cfg.get(section, {}).values():
+            if path := item.get("path"):
+                yield path
+
+
+def _is_sequence_derived(path: str) -> bool:
+    """Check if path starts with a sequence-derived root."""
+    root = path.split(".")[0].split("==")[0]
+    return root in SEQUENCE_DERIVED_ROOTS
 
 
 def get_cached_sequence_fields(
     processed_report: dict, config: Config
 ) -> Optional[dict]:
-    """Return cached sequence-derived fields if releaseDate matches."""
+    """Return cached sequence-derived field values if releaseDate matches."""
     accession = processed_report["processedAssemblyInfo"]["genbankAccession"]
     if accession not in config.previous_parsed:
         return None
-    previous_report = config.previous_parsed[accession]
-    if (
-        processed_report["assemblyInfo"]["releaseDate"]
-        != previous_report["releaseDate"]
+
+    previous_row = config.previous_parsed[accession]
+
+    # Check release date
+    if processed_report["assemblyInfo"]["releaseDate"] != previous_row.get(
+        "releaseDate"
     ):
         return None
-    return _sequence_derived_fields(previous_report)
+
+    # Find which headers correspond to sequence-derived paths
+    types_cfg = config.config or {}
+    keep_headers = set()
+
+    for section in ("attributes", "identifiers", "metadata"):
+        for item in types_cfg.get(section, {}).values():
+            path = item.get("path", "")
+            header = item.get("header", "")
+            if header and any(
+                path.startswith(f"{root}.") or path == root
+                for root in SEQUENCE_DERIVED_ROOTS
+            ):
+                keep_headers.add(header)
+
+    # Return dict with only the kept headers
+    return {
+        h: previous_row[h]
+        for h in keep_headers
+        if h in previous_row and previous_row[h]
+    }
 
 
 @task()
@@ -388,10 +422,11 @@ def process_assembly_reports(
             if processed_report is None:
                 continue
 
-            # reuse expensive sequence-derived values only
-            cached_seq = get_cached_sequence_fields(processed_report, config)
-            if cached_seq is not None:
-                processed_report.update(cached_seq)
+            if cached_fields := get_cached_sequence_fields(processed_report, config):
+                # Apply parse functions to reconstruct nested structure
+                for header, value in cached_fields.items():
+                    if header in config.parse_fns:
+                        config.parse_fns[header](processed_report, value)
             else:
                 fetch_and_parse_sequence_report(processed_report)
 
