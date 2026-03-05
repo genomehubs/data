@@ -219,3 +219,17 @@ deployments:
     schedules:
       - *daily
     work_pool: *goat_data_work_pool
+
+  - name: update-tol-genome-notes
+    # This flow updates the ToL genome notes
+    entrypoint: flows/updaters/update_tol_genome_notes.py:update_tol_genome_notes
+    parameters:
+      # Local path to save the ToL genome notes TSV file
+      output_path: "/home/ubuntu/tmp/test/status-lists/tol_genome_notes_expanded.tsv"
+      # The S3 path to save the ToL genome notes TSV file
+      s3_path: s3://goat/resources/status-lists/tol_genome_notes_expanded.tsv
+      # Minimum number of records expected in the ToL genome notes
+      min_records: 1600
+    schedules:
+      - *daily
+    work_pool: *goat_data_work_pool
