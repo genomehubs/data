@@ -122,7 +122,7 @@ def update_tol_genome_notes(output_path: str, s3_path: str, min_records: int) ->
     """Update the ToL genome notes TSV file."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     line_count = fetch_tol_genome_notes(output_path, min_records)
-    if line_count > min_records and s3_path:
+    if line_count >= min_records and s3_path:
         upload_s3_tsv(output_path, s3_path)
     emit_event(
         event="update.tol_genome_notes_expanded.tsv.finished",
