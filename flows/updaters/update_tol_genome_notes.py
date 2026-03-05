@@ -16,7 +16,8 @@ from flows.lib.utils import upload_to_s3
 
 @task(retries=3, retry_delay_seconds=60, log_prints=True)
 def connect_to_portal():
-    """Connect to the ToL portal and retrieve the filtered set of genome notes.Get the subset of species that have a value for gn_date_published.
+    """Connect to the ToL portal and retrieve the filtered set of genome notes.
+    Get the subset of species that have a value for gn_date_published.
     This is a proxy for whether there is any genome note for a species"""
     print("Connecting to ToL portal...")
     prtl = portal()
@@ -38,7 +39,8 @@ def get_projects(genome_note, *args):
 
 def get_published_status_project(genome_note, field_name=None):
     """
-    Return 'published' if the given project acronym (derived from the suffix of the field name) is present
+    Return 'published' if the given project acronym
+    (derived from the suffix of the field name) is present
     in the genome note's associated projects.
     """
     if not field_name:
