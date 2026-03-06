@@ -25,6 +25,17 @@ definitions:
       &goat_data_work_pool # Work pool for the goat-data import flows
       name: goat-data
       work_queue_name: default
+    goat_data_work_pool_conda: &goat_data_work_pool_conda
+      # Process work pool that runs flows inside a conda env.
+      # Requires a Process-type work pool named goat-data-conda to exist on the server.
+      # Create it with: prefect work-pool create goat-data-conda --type process
+      # The job_variables.command tells the process worker to invoke Python from the
+      # named conda env, so each flow subprocess runs with its own isolated deps.
+      name: goat-data-conda
+      work_queue_name: default
+      job_variables:
+        # Replace "prefect" with your target conda env name
+        command: conda run --no-capture-output -n data_import python
   schedules:
     daily: &daily # Runs Monday to Saturday at 00:05 UTC
       cron: "5 0 * * 1-6"
@@ -46,7 +57,7 @@ deployments:
       s3_path: s3://goat/resources/assembly-data/ncbi_datasets_eukaryota.jsonl
     schedules:
       - *daily
-    work_pool: *goat_data_work_pool
+    work_pool: *goat_data_work_pool_conda
 
   - name: fetch-parse-validate-ncbi-datasets
     # This flow fetches the previous yaml/tsv pair, then parses and validates the NCBI datasets JSONL file
@@ -84,7 +95,7 @@ deployments:
           work_dir: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}"
           append: true
           dry_run: true
-    work_pool: *goat_data_work_pool
+    work_pool: *goat_data_work_pool_conda
 
   - name: update-tolid-prefixes
     # This flow updates the TOLID prefixes file
@@ -94,7 +105,7 @@ deployments:
       output_path: "/home/ubuntu/tmp/test/tolid-prefixes"
     schedules:
       - *weekly
-    work_pool: *goat_data_work_pool
+    work_pool: *goat_data_work_pool_conda
 
   - name: update-ott-taxonomy
     # This flow updates the OTT taxonomy file
@@ -104,7 +115,7 @@ deployments:
       output_path: "/home/ubuntu/tmp/test/ott-taxonomy"
     schedules:
       - *monthly
-    work_pool: *goat_data_work_pool
+    work_pool: *goat_data_work_pool_conda
 
   - name: update-ncbi-taxonomy
     # This flow updates the NCBI taxonomy dump
@@ -114,7 +125,7 @@ deployments:
       output_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
     schedules:
       - *daily
-    work_pool: *goat_data_work_pool
+    work_pool: *goat_data_work_pool_conda
 
   - name: update-ena-taxonomy-extra
     # This flow updates the ENA taxonomy dump
@@ -142,7 +153,7 @@ deployments:
           output_path: "/home/ubuntu/tmp/test/ena-taxonomy/ena-taxonomy-extra.jsonl"
           s3_path: "s3://goat/resources/taxonomy/ena/ena-taxonomy-extra.jsonl.gz"
           append: true
-    work_pool: *goat_data_work_pool
+    work_pool: *goat_data_work_pool_conda
 
   - name: update-genomehubs-taxonomy
     # This flow updates the GenomeHubs taxonomy file
@@ -167,7 +178,7 @@ deployments:
           input_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota-taxonomy-input.yaml"
           output_path: "/home/ubuntu/tmp/test/genomehubs-taxonomy/eukaryota/nodes.jsonl"
           s3_path: "s3://goat/resources/taxonomy/genomehubs/eukaryota/nodes.jsonl.gz"
-    work_pool: *goat_data_work_pool
+    work_pool: *goat_data_work_pool_conda
 
   - name: update-data-freeze
     # This flow updates a data freeze JSONL file
@@ -176,7 +187,7 @@ deployments:
       output_path: "/home/ubuntu/tmp/test/assembly-data-vgp-phase1/vgp_phase1.jsonl"
       s3_path: s3://goat/resources/data-freeezes/vgp_phase1.jsonl.gz
       data_freeze_path: "s3://goat/resources/data-freezes/vgp_phase1_list_data_freeze.tsv"
-    work_pool: *goat_data_work_pool
+    work_pool: *goat_data_work_pool_conda
 
   - name: fetch-parse-validate-data-freeze
     entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
@@ -204,7 +215,7 @@ deployments:
           data_freeze_path: "s3://goat/resources/data-freezes/vgp_phase1_list_data_freeze.tsv"
           append: true
           dry_run: true
-    work_pool: *goat_data_work_pool
+    work_pool: *goat_data_work_pool_conda
 
   - name: update-nhm-status-list
     # This flow updates the NHM status list
@@ -218,7 +229,7 @@ deployments:
       min_records: 18000
     schedules:
       - *daily
-    work_pool: *goat_data_work_pool
+    work_pool: *goat_data_work_pool_conda
 
   - name: update-tol-genome-notes
     # This flow updates the ToL genome notes
@@ -232,4 +243,6 @@ deployments:
       min_records: 1600
     schedules:
       - *daily
-    work_pool: *goat_data_work_pool
+    # Uses the conda-isolated work pool to avoid pydantic version conflicts
+    # Isolated env contains genomehubs and tol-sdk packages which are required to parse the ToL genome notes
+    work_pool: *goat_data_work_pool_conda
