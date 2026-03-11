@@ -33,7 +33,9 @@ def read_ncbi_tax_ids(taxdump_path: str) -> set[str]:
 
 
 @task(log_prints=True)
-def add_jsonl_tax_ids(jsonl_path: str, tax_ids: set[str]) -> None:
+def add_jsonl_tax_ids(
+    jsonl_path: str, tax_ids: set[str], allowed_tax_ids: set[str] | None = None
+) -> None:
     print(f"Reading previously fetched ENA taxids from {jsonl_path}")
     filtered_path = f"{jsonl_path}.filtered"
     try:
@@ -41,7 +43,9 @@ def add_jsonl_tax_ids(jsonl_path: str, tax_ids: set[str]) -> None:
             for line in f:
                 data = json.loads(line)
                 tax_id = data["taxId"]
-                if tax_id not in tax_ids:
+                if (
+                    allowed_tax_ids is None or tax_id in allowed_tax_ids
+                ) and tax_id not in tax_ids:
                     f_out.write(line)
                     tax_ids.add(tax_id)
         os.replace(filtered_path, jsonl_path)
@@ -51,8 +55,8 @@ def add_jsonl_tax_ids(jsonl_path: str, tax_ids: set[str]) -> None:
 
 
 @task(log_prints=True)
-def get_ena_api_new_taxids(root_taxid: str, existing_tax_ids: set[str]) -> set[str]:
-    print(f"Fetching new taxids for tax_tree({root_taxid}) from ENA API")
+def get_ena_api_taxids(root_taxid: str) -> set[str]:
+    print(f"Fetching taxids for tax_tree({root_taxid}) from ENA API")
 
     limit = 10000000
     url = (
@@ -62,7 +66,7 @@ def get_ena_api_new_taxids(root_taxid: str, existing_tax_ids: set[str]) -> set[s
 
     # Stream the content of the URL
     column_index = None
-    new_tax_ids = set()
+    ena_tax_ids = set()
     with urlopen(url) as response:
         for line in response:
             columns = line.decode("utf-8").strip().split("\t")
@@ -70,9 +74,8 @@ def get_ena_api_new_taxids(root_taxid: str, existing_tax_ids: set[str]) -> set[s
                 column_index = 0 if columns[0] == "tax_id" else 1
             else:
                 tax_id = columns[column_index]
-                if tax_id not in existing_tax_ids:
-                    new_tax_ids.add(tax_id)
-    return new_tax_ids
+                ena_tax_ids.add(tax_id)
+    return ena_tax_ids
 
 
 @task(log_prints=True)
@@ -149,15 +152,16 @@ def update_ena_taxonomy_extra(
 
     # 1. read IDs from ncbi nodes file
     existing_tax_ids = read_ncbi_tax_ids(taxdump_path)
+    # 2. fetch list of tax IDs from ENA API
+    ena_tax_ids = get_ena_api_taxids(root_taxid)
     if append:
-        # 2. fetch jsonl file from s3 if s3_path is provided
+        # 3. fetch jsonl file from s3 if s3_path is provided
         if s3_path:
             fetch_s3_jsonl(s3_path, output_path)
-        # 3. read existing IDs from local JSONL file
-        add_jsonl_tax_ids(output_path, existing_tax_ids)
-    # 4. fetch list of new IDs from ENA API
-    new_tax_ids = get_ena_api_new_taxids(root_taxid, existing_tax_ids)
+        # 4. keep only IDs that are still in ENA and not in ncbi nodes
+        add_jsonl_tax_ids(output_path, existing_tax_ids, allowed_tax_ids=ena_tax_ids)
     # 5. fetch details for new IDs from ENA API and save to JSONL file
+    new_tax_ids = ena_tax_ids - existing_tax_ids
     update_ena_jsonl(new_tax_ids, output_path, append)
     # 6. sort the JSONL file by lineage
     sort_jsonl_by_lineage(output_path)
