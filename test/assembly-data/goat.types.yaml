@@ -157,7 +157,7 @@ file:
       - taxon_id
   format: tsv
   header: true
-  name: ncbi_datasets_eukaryota.filtered.tsv.gz
+  name: goat.tsv
   needs:
     - ATTR_assembly.types.yaml
     - TAXON_assembly.types.yaml

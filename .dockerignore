@@ -1,0 +1,50 @@
+# Git-related
+.git
+.gitignore
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python caches
+__pycache__
+*.py[cod]
+*$py.class
+*.egg
+*.egg-info
+dist/
+build/
+
+# Prefect
+.prefect
+.prefectignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+*.md
+docs/
+
+# Large data directories (in git, not needed in container)
+lepbase-data/
+lepbase-taxonomy/
+example/
+asm_stats/
+configs/
+
+# Test directories
+test/
+tmp/
+__pycache__/
+
+# System
+.env
+.env.local
+*.log
