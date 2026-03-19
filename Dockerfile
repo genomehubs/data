@@ -27,5 +27,6 @@ RUN python -c "import genomehubs; print('genomehubs installed')" && \
     echo "All dependencies verified and compatible!"
 
 # Set the entrypoint for running flows
-ENTRYPOINT ["python"]
-CMD ["-m", "prefect.cli"]
+# Allow the container to execute arbitrary commands
+ENTRYPOINT []
+CMD ["python"]
