@@ -55,13 +55,20 @@ def run_docker_flow(
 
     # Build Docker command
     # Note: NOT using -it (interactive/tty) because this runs from Prefect agent without a terminal
-    cwd = os.getcwd()
+    # Find the repository root relative to this script location
+    # (not using os.getcwd() because Prefect might run from a different working directory)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # script_dir is .../flows/orchestration, so go up two levels to get repo root
+    repo_root = os.path.dirname(os.path.dirname(script_dir))
+
+    logger.info(f"Repository root: {repo_root}")
+
     cmd = [
         "docker",
         "run",
         "--rm",
         "-v",
-        f"{cwd}:{work_dir}",
+        f"{repo_root}:{work_dir}",
         "-e",
         "SKIP_PREFECT=true",
         docker_image,
