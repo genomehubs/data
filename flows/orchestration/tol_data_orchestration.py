@@ -96,6 +96,8 @@ def run_docker_flow(
         volume_mount,
         "-e",
         "SKIP_PREFECT=true",
+        "-e",
+        f"PYTHONPATH={work_dir}",
         docker_image,
         "python",
         f"{work_dir}/{flow_script}",
