@@ -224,7 +224,7 @@ deployments:
       - *daily
     work_pool: *goat_data_work_pool
 
-  - name: tol-genome-notes-orchestration
+  - name: orchestrate-tol-genome-notes
     # Orchestrated flow that runs tol-genome-notes in Docker with dependency isolation
     # This approach:
     # - Runs lightweight Prefect logic (no pydantic issues)
