@@ -2,140 +2,115 @@
 
 ## Summary
 
-This PR implements a one-time backfill process to populate historical assembly versions for all existing assemblies in the genomehubs dataset. It enables version-aware milestone tracking by capturing superseded assembly versions that were previously not tracked.
+One-time backfill process to populate historical (superseded) assembly versions
+from NCBI for all existing assemblies with version > 1.  Enables version-aware
+milestone tracking by capturing previously untracked superseded versions.
+
+## What Changed (latest revision)
+
+### Bug fixes
+- **Fixed data-loss bug**: `write_to_tsv` overwrites by default, so the
+  original per-batch write + `parsed = {}` clearing lost all but the last
+  batch.  All rows now accumulate in memory and `write_to_tsv` is called
+  exactly once at the end.  Checkpoints only record resume progress.
+
+### Structural changes
+- **Renamed** `backfill_historical_versions.py` →
+  `parse_backfill_historical_versions.py` so `register.py` discovers it as a
+  plugin via the `parse_` prefix convention.
+- **Changed orchestrator decorator** from `@task` to `@flow(log_prints=True)`
+  to match how `parse_ncbi_assemblies` structures its flow/task hierarchy.
+- **Split `find_all_assembly_versions`** into `discover_version_accessions`
+  (FTP) + `fetch_version_metadata` (datasets CLI) for modularity and
+  independent testability.
+- **Added `backfill_historical_versions_wrapper`** matching the
+  `fetch_parse_validate` parser signature so the flow integrates with the
+  Prefect pipeline.
+
+### Convention alignment
+- **CLI arguments** now use `shared_args` exclusively (`INPUT_PATH`,
+  `YAML_PATH`, `WORK_DIR`); removed ad-hoc `--checkpoint` argument.
+  Checkpoint path is derived via `derive_checkpoint_path`.
+- **Replaced `subprocess.run`** with `utils.run_quoted` for shell-safe
+  argument quoting (consistent with `parse_ncbi_assemblies`).
+- **Code style** aligned with GenomeHubs conventions: Google-style docstrings,
+  lowercase type hints (`dict`, `list`, `tuple`), `e` for exception variables,
+  removed shebang and section banners.
+- **`assembly_historical.yaml`**: moved `needs` under `file:` section and
+  references `ATTR_assembly.types.yaml` (matches `ncbi_datasets_eukaryota`
+  convention).
+
+### Test suite rewrite
+- Rewrote `tests/test_backfill.py` using pytest (was a custom runner).
+- **33 tests**, all passing, covering:
+  - Accession parsing helpers
+  - Assembly identification from JSONL fixture
+  - Cache round-trip with expiry
+  - Checkpoint save/load/derive
+  - Accession format validation
+  - `parse_historical_version` delegation (mocked)
+  - Orchestrator: single TSV write, multi-assembly accumulation,
+    current-version skipping, no-op for v1-only input
+  - **Regression test for the batch-overwrite data-loss bug**
 
 ## Solution Overview
 
-Implements a **one-time backfill script** that:
-1. Identifies assemblies with version > 1 (indicating historical versions exist)
-2. Discovers all historical versions via NCBI FTP
-3. Fetches metadata for each historical version using NCBI Datasets CLI
-4. Outputs historical versions to a separate TSV file with `versionStatus = "superseded"`
-5. Uses smart caching to avoid re-fetching data on reruns
+The backfill script:
+1. Identifies assemblies with version > 1 from the input JSONL
+2. Discovers all historical versions via NCBI FTP directory listing
+3. Fetches metadata for each version using NCBI Datasets CLI
+4. Parses each version through `process_assembly_report` with
+   `version_status="superseded"`
+5. Writes all accumulated rows to a single TSV via `write_to_tsv`
 
-## Key Features
+### Smart 2-Tier Caching
+- **Version discovery cache** (7-day expiry): FTP directory listings
+- **Metadata cache** (30-day expiry): Datasets CLI responses
+- Reduces reruns from hours to minutes
 
-### 1. FTP-Based Version Discovery
-- Queries NCBI FTP to find all versions of each assembly
-- More reliable than API for historical data
-- Based on proven DToL prototype implementation
-
-### 2. Reuses existing Parser
-- Calls `parse_ncbi_assemblies.process_assembly_report()` with `version_status="superseded"`
-- Fetches sequence reports and computes metrics identically to current assemblies
-- Uses same YAML config system
-- Generates identical TSV schema (plus `versionStatus` field)
-
-### 3. Smart 2-Tier Caching
-- **Version discovery cache** (7-day expiry): Stores which versions exist
-- **Metadata cache** (30-day expiry): Stores assembly metadata from Datasets CLI
-- Dramatically reduces runtime on reruns (from hours to minutes)
-
-### 4. Checkpoint System
-- Saves progress every 100 assemblies
+### Checkpoint System
+- Saves progress every 100 assemblies to `{work_dir}/checkpoints/`
 - Allows resuming after interruptions
-- Critical for processing ~3,694 assemblies
+- Does **not** trigger intermediate TSV writes (avoids the overwrite bug)
 
-## Files Modified/Created
+## Files
 
-### New Files
-- `flows/parsers/backfill_historical_versions.py` - Main backfill script
-- `configs/assembly_historical.yaml` - Output schema configuration
-- `tests/test_backfill.py` - Automated test suite
-- `tests/test_data/assembly_test_sample.jsonl` - Test dataset (3 assemblies)
-- `tests/README_test_backfill.md` - Testing documentation
+### New
+- `flows/parsers/parse_backfill_historical_versions.py` — Main backfill flow
+- `configs/assembly_historical.yaml` — Output schema configuration
+- `tests/test_backfill.py` — pytest suite (33 tests)
+- `tests/test_data/assembly_test_sample.jsonl` — Test fixture (3 assemblies)
 
-### Modified Files
-- `flows/parsers/parse_ncbi_assemblies.py` - Added `version_status` parameter
-- `flows/lib/utils.py` - Added `parse_s3_file` stub function
-
-## Schema Changes
-
-### New Field in Output
-- Same schema as current assemblies, plus `versionStatus` column
-- `versionStatus` - Indicates if assembly is "current" or "superseded"
-
-### Expected Results
-- **Input**: ~3,694 assemblies with version > 1
-- **Output**: ~8,500 historical version records
-- **Runtime**: ~10-15 hours (first run), ~15-30 minutes (with cache)
-
-## Testing
-
-### Automated Tests (4/4 passing)
-```bash
-python tests/test_backfill.py
-```
-
-Tests verify:
-1. ✅ Accession parsing
-2. ✅ Assembly identification
-3. ✅ FTP version discovery
-4. ✅ Cache functionality
-
-### Manual Test (3 assemblies)
-```bash
-python flows/parsers/backfill_historical_versions.py \
-    --input tests/test_data/assembly_test_sample.jsonl \
-    --config configs/assembly_historical.yaml \
-    --checkpoint tests/test_data/test_checkpoint.json
-```
+### Modified
+- `flows/parsers/parse_ncbi_assemblies.py` — Added `version_status` parameter
 
 ## Usage
 
-### One-Time Backfill
+### As a standalone CLI
 ```bash
-python flows/parsers/backfill_historical_versions.py \
-    --input flows/parsers/eukaryota/ncbi_dataset/data/assembly_data_report.jsonl \
-    --config configs/assembly_historical.yaml \
-    --checkpoint backfill_checkpoint.json
-```
-On first run:
-- Takes ~10-15 hours (fetches all historical versions)
-- Creates tmp/backfill_cache/ directory
-- Checkpoints every 100 assemblies
-- Safe to Ctrl+C and resume
-
-On subsequent runs (after input update):
-- Takes ~15-30 minutes (uses cache for existing)
-- Only fetches NEW assemblies
-- Cache expires: version discovery (7 days), metadata (30 days)
-
-Output:
-- outputs/assembly_historical.tsv (all superseded versions)
-- Each row has version_status="superseded"
-- Includes all sequence reports and metrics
-
-## Important Notes
-
-### 1. Stub Function Warning
-The `parse_s3_file()` function in `flows/lib/utils.py` is currently a stub:
-
-```python
-def parse_s3_file(s3_path: str) -> dict:
-    return {}  # Placeholder
+python -m flows.parsers.parse_backfill_historical_versions \
+    --input_path data/assembly_data_report.jsonl \
+    --yaml_path configs/assembly_historical.yaml \
+    --work_dir tmp
 ```
 
-**Action needed**: If Rich has a real implementation, replace this stub. The function is imported by `parse_ncbi_assemblies.py` but not used by the backfill script.
+### Via Prefect pipeline
+Discovered automatically by `register.py` and invoked through
+`fetch_parse_validate` with the standard parser signature.
 
-### 2. One-Time Process
-This backfill is designed to run **once** to populate historical data. Future updates should be handled by the incremental daily pipeline.
+### Expected performance
+- **First run**: ~10–15 hours (~3,700 assemblies, ~8,500 versions)
+- **Subsequent runs**: ~15–30 minutes (cache hits)
 
-### 3. Cache Directory
-The cache directory `tmp/backfill_cache/` can be safely deleted after successful completion. It contains:
-- Version discovery data (FTP queries)
-- Assembly metadata (Datasets CLI responses)
+### Running tests
+```bash
+set SKIP_PREFECT=true
+python -m pytest tests/test_backfill.py -v
+```
 
-## Next Steps (After PR Merge)
+## Next Steps (after merge)
 
-1. **Run full backfill** on production dataset (~10-15 hours)
-2. **Upload output** to appropriate S3 location
-3. **Implement Phase 1**: Incremental daily updates for new historical versions
-4. **Implement Phase 2**: Version-aware milestone tracking
-
-## Questions for Reviewer
-
-1. Is the `parse_s3_file()` stub acceptable, or do you have a real implementation to use?
-2. Should historical versions go to a different S3 path than current assemblies?
-3. Any preferences for checkpoint file location/naming?
-
+1. Run full backfill on production dataset
+2. Upload output to S3
+3. Implement Phase 1: incremental daily updates for new historical versions
+4. Implement Phase 2: version-aware milestone tracking

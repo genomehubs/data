@@ -2,9 +2,6 @@
 # This config defines the schema for assembly_historical.tsv
 # which contains all superseded assembly versions
 
-needs:
-  - ncbi_datasets_eukaryota.types.yaml
-
 attributes:
   assembly_level:
     header: assemblyLevel
@@ -149,6 +146,8 @@ attributes:
 
 file:
   display_group: general
+  needs:
+    - ATTR_assembly.types.yaml
   exclusions:
     attributes:
       - bioproject

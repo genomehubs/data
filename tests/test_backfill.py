@@ -1,214 +1,439 @@
-#!/usr/bin/env python3
+"""Tests for parse_backfill_historical_versions.py
+
+Covers:
+- Accession parsing helpers
+- Assembly identification from JSONL fixture
+- Cache round-trip (save/load with expiry)
+- Checkpoint save/load/derive
+- Accession format validation
+- parse_historical_version calls correct functions with correct args
+- backfill_historical_versions orchestrator: accumulates all rows and writes
+  TSV exactly once (regression test for the batch-overwrite data-loss bug)
 """
-Test script for backfill_historical_versions.py
 
-This script tests the historical version backfill process on a small sample dataset.
-
-Usage:
-    python tests/test_backfill.py
-"""
-
+import json
 import os
 import sys
-import json
+import time
 from pathlib import Path
+from unittest.mock import MagicMock, call, patch
 
-# Add parent directory to path
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from flows.parsers.backfill_historical_versions import (
+os.environ["SKIP_PREFECT"] = "true"
+
+from flows.parsers import (
+    parse_backfill_historical_versions as backfill_module,
+)
+from flows.parsers.parse_backfill_historical_versions import (
+    ACCESSION_PATTERN,
+    backfill_historical_versions,
+    derive_checkpoint_path,
+    get_cache_path,
     identify_assemblies_needing_backfill,
+    load_checkpoint,
+    load_from_cache,
     parse_accession,
-    find_all_assembly_versions
+    parse_version,
+    save_checkpoint,
+    save_to_cache,
 )
 
-def test_parse_accession():
-    """Test accession parsing."""
-    print("\n" + "="*80)
-    print("TEST 1: Accession Parsing")
-    print("="*80)
+FIXTURE_JSONL = "tests/test_data/assembly_test_sample.jsonl"
 
-    test_cases = [
-        ("GCA_000222935.2", ("GCA_000222935", 2)),
-        ("GCA_003706615.3", ("GCA_003706615", 3)),
-        ("GCF_000001405.39", ("GCF_000001405", 39)),
-    ]
 
-    for accession, expected in test_cases:
-        result = parse_accession(accession)
-        status = "PASS" if result == expected else "FAIL"
-        print(f"  {status} {accession} -> {result}")
-        assert result == expected, f"Expected {expected}, got {result}"
+class TestParseAccession:
+    """Unit tests for parse_accession and parse_version."""
 
-    print("  All accession parsing tests passed!")
+    @pytest.mark.parametrize(
+        "accession, expected",
+        [
+            ("GCA_000222935.2", ("GCA_000222935", 2)),
+            ("GCA_003706615.3", ("GCA_003706615", 3)),
+            ("GCF_000001405.39", ("GCF_000001405", 39)),
+        ],
+    )
+    def test_parse_accession(self, accession, expected):
+        assert parse_accession(accession) == expected
 
-def test_identify_assemblies():
-    """Test identification of assemblies needing backfill."""
-    print("\n" + "="*80)
-    print("TEST 2: Identify Assemblies Needing Backfill")
-    print("="*80)
+    def test_parse_accession_no_version(self):
+        assert parse_accession("GCA_000222935") == ("GCA_000222935", 1)
 
-    test_file = "tests/test_data/assembly_test_sample.jsonl"
+    @pytest.mark.parametrize(
+        "accession, expected",
+        [
+            ("GCA_000222935.2", 2),
+            ("GCA_000222935.10", 10),
+            ("GCA_000222935", 1),
+        ],
+    )
+    def test_parse_version(self, accession, expected):
+        assert parse_version(accession) == expected
 
-    if not os.path.exists(test_file):
-        print(f"  FAIL Test file not found: {test_file}")
-        return False
 
-    assemblies = identify_assemblies_needing_backfill(test_file)
+class TestAccessionPattern:
+    """Ensure the compiled ACCESSION_PATTERN validates correctly."""
 
-    print(f"  Found {len(assemblies)} assemblies needing backfill:")
-    for asm in assemblies:
-        print(f"    - {asm['current_accession']}: v{asm['current_version']} "
-              f"(needs v{asm['historical_versions_needed']})")
+    @pytest.mark.parametrize(
+        "accession",
+        ["GCA_000222935.2", "GCF_000001405.39", "GCA_123456789.1"],
+    )
+    def test_valid(self, accession):
+        assert ACCESSION_PATTERN.match(accession)
 
-    # Verify we found the expected assemblies
-    expected_count = 3  # GCA_000222935.2, GCA_000412225.2, GCA_003706615.3
-    assert len(assemblies) == expected_count, \
-        f"Expected {expected_count} assemblies, found {len(assemblies)}"
+    @pytest.mark.parametrize(
+        "accession",
+        ["GCA_00022293.2", "GCA_0002229350.2", "XYZ_000222935.2", "hello"],
+    )
+    def test_invalid(self, accession):
+        assert not ACCESSION_PATTERN.match(accession)
 
-    print(f"  PASS Correctly identified {len(assemblies)} assemblies")
-    return True
 
-def test_version_discovery():
-    """Test FTP-based version discovery (using cache if available)."""
-    print("\n" + "="*80)
-    print("TEST 3: Version Discovery via FTP")
-    print("="*80)
-    print("  Note: This test queries NCBI FTP - may take a minute...")
+class TestIdentifyAssemblies:
+    """Identify which assemblies need backfill from the JSONL fixture."""
 
-    # Test with a known multi-version assembly
-    test_accession = "GCA_000222935.2"  # Aciculosporium take - has version 1 and 2
+    @pytest.fixture()
+    def fixture_path(self):
+        if not os.path.exists(FIXTURE_JSONL):
+            pytest.skip(f"Fixture not found: {FIXTURE_JSONL}")
+        return FIXTURE_JSONL
 
-    print(f"  Testing: {test_accession}")
-    versions = find_all_assembly_versions(test_accession)
+    def test_finds_multi_version_assemblies(self, fixture_path):
+        assemblies = identify_assemblies_needing_backfill(fixture_path)
+        assert len(assemblies) == 3
 
-    if not versions:
-        print(f"  FAIL No versions found (FTP query may have failed)")
-        print(f"    This is not critical - may be network issue")
-        return False
+    def test_fields_present(self, fixture_path):
+        assemblies = identify_assemblies_needing_backfill(fixture_path)
+        for asm in assemblies:
+            assert "base_accession" in asm
+            assert "current_version" in asm
+            assert "current_accession" in asm
+            assert "historical_versions_needed" in asm
 
-    print(f"  PASS Found {len(versions)} version(s):")
-    for v in versions:
-        acc = v.get('accession', 'unknown')
-        print(f"    - {acc}")
+    def test_version_ranges(self, fixture_path):
+        assemblies = identify_assemblies_needing_backfill(fixture_path)
+        by_base = {a["base_accession"]: a for a in assemblies}
+        assert by_base["GCA_000222935"]["historical_versions_needed"] == [1]
+        assert by_base["GCA_003706615"]["historical_versions_needed"] == [1, 2]
 
-    # Verify we found at least version 1 and 2
-    accessions = [v.get('accession', '') for v in versions]
-    base = test_accession.split('.')[0]
+    def test_ignores_version_one(self, tmp_path):
+        """An assembly at version 1 should not appear in the results."""
+        jsonl = tmp_path / "v1.jsonl"
+        jsonl.write_text(json.dumps({"accession": "GCA_999999999.1"}) + "\n")
+        assert identify_assemblies_needing_backfill(str(jsonl)) == []
 
-    # Should find both v1 and v2
-    expected_versions = [f"{base}.1", f"{base}.2"]
-    found_expected = [v for v in expected_versions if v in accessions]
 
-    print(f"  PASS Found {len(found_expected)}/{len(expected_versions)} expected versions")
-    return True
+class TestCache:
+    """Round-trip and expiry tests for the JSON cache layer."""
 
-def test_cache_functionality():
-    """Test that caching works correctly."""
-    print("\n" + "="*80)
-    print("TEST 4: Cache Functionality")
-    print("="*80)
+    def test_save_and_load(self, tmp_path):
+        path = str(tmp_path / "test.json")
+        save_to_cache(path, {"key": "value"})
+        assert load_from_cache(path) == {"key": "value"}
 
-    # Clean cache first (Windows-safe deletion)
-    import shutil
-    import time as time_module
-    cache_dir = "tmp/backfill_cache"
-    if os.path.exists(cache_dir):
-        try:
-            # Give time for file handles to close
-            time_module.sleep(0.5)
-            shutil.rmtree(cache_dir)
-            print(f"  Cleared cache directory: {cache_dir}")
-        except PermissionError:
-            print(f"  Note: Cache directory in use, will test with existing cache")
+    def test_expired_cache_returns_empty(self, tmp_path):
+        path = str(tmp_path / "old.json")
+        save_to_cache(path, {"key": "value"})
+        os.utime(path, (0, 0))
+        assert load_from_cache(path, max_age_days=1) == {}
 
-    test_accession = "GCA_000222935.2"
+    def test_missing_file_returns_empty(self, tmp_path):
+        assert load_from_cache(str(tmp_path / "nope.json")) == {}
 
-    # First call - should fetch from FTP
-    print(f"  First call (should fetch from FTP)...")
-    import time
-    start = time.time()
-    versions1 = find_all_assembly_versions(test_accession)
-    time1 = time.time() - start
+    def test_get_cache_path_sanitises(self, tmp_path):
+        path = get_cache_path(str(tmp_path), "metadata", "GCA_000222935.2")
+        assert "GCA_000222935.2" in path
+        assert path.endswith(".json")
 
-    if not versions1:
-        print(f"  FAIL FTP fetch failed - skipping cache test")
-        return False
 
-    print(f"    Took {time1:.2f}s, found {len(versions1)} versions")
+class TestCheckpoint:
+    """Checkpoint save/load/derive tests."""
 
-    # Second call - should use cache
-    print(f"  Second call (should use cache)...")
-    start = time.time()
-    versions2 = find_all_assembly_versions(test_accession)
-    time2 = time.time() - start
+    def test_round_trip(self, tmp_path):
+        path = str(tmp_path / "cp.json")
+        save_checkpoint(path, 42)
+        cp = load_checkpoint(path)
+        assert cp["processed_count"] == 42
+        assert "timestamp" in cp
 
-    print(f"    Took {time2:.2f}s, found {len(versions2)} versions")
+    def test_missing_checkpoint_returns_empty(self, tmp_path):
+        assert load_checkpoint(str(tmp_path / "nope.json")) == {}
 
-    # Cache should be much faster
-    if time2 < time1 * 0.5:  # At least 50% faster
-        print(f"  PASS Cache is working (2nd call {time2/time1*100:.1f}% of 1st call time)")
-    else:
-        print(f"  WARN Cache may not be working (times similar)")
+    def test_derive_is_deterministic(self, tmp_path):
+        path_a = derive_checkpoint_path("a.jsonl", "b.yaml", str(tmp_path))
+        path_b = derive_checkpoint_path("a.jsonl", "b.yaml", str(tmp_path))
+        assert path_a == path_b
 
-    # Verify cache files exist
-    if os.path.exists(cache_dir):
-        cache_files = list(Path(cache_dir).rglob("*.json"))
-        print(f"  PASS Cache directory created with {len(cache_files)} files")
-    else:
-        print(f"  FAIL Cache directory not created")
+    def test_derive_different_inputs_differ(self, tmp_path):
+        path_a = derive_checkpoint_path("a.jsonl", "b.yaml", str(tmp_path))
+        path_c = derive_checkpoint_path("c.jsonl", "b.yaml", str(tmp_path))
+        assert path_a != path_c
 
-    return True
 
-def main():
-    """Run all tests."""
-    print("\n" + "="*80)
-    print("BACKFILL SCRIPT TEST SUITE")
-    print("="*80)
-    print("Testing: flows/parsers/backfill_historical_versions.py")
-    print("="*80)
+class TestParseHistoricalVersion:
+    """Verify parse_historical_version calls the right functions."""
 
-    results = {
-        "Accession Parsing": False,
-        "Identify Assemblies": False,
-        "Version Discovery": False,
-        "Cache Functionality": False,
-    }
+    @patch.object(backfill_module, "gh_utils")
+    @patch.object(backfill_module, "fetch_and_parse_sequence_report")
+    @patch.object(backfill_module, "process_assembly_report")
+    @patch.object(backfill_module, "utils")
+    def test_calls_process_with_superseded(
+        self, mock_utils, mock_process, mock_seq, mock_gh
+    ):
+        mock_utils.convert_keys_to_camel_case.return_value = {
+            "accession": "GCA_000222935.1"
+        }
+        mock_process.return_value = {
+            "processedAssemblyInfo": {
+                "genbankAccession": "GCA_000222935.1",
+                "versionStatus": "superseded",
+            }
+        }
+        mock_gh.parse_report_values.return_value = {
+            "genbankAccession": "GCA_000222935.1",
+            "assemblyID": "GCA_000222935_1",
+        }
 
-    try:
-        # Run tests
-        test_parse_accession()
-        results["Accession Parsing"] = True
+        config = MagicMock()
+        row = backfill_module.parse_historical_version(
+            version_data={"accession": "GCA_000222935.1"},
+            config=config,
+            base_accession="GCA_000222935",
+            version_num=1,
+            current_accession="GCA_000222935.2",
+        )
 
-        results["Identify Assemblies"] = test_identify_assemblies()
-        results["Version Discovery"] = test_version_discovery()
-        results["Cache Functionality"] = test_cache_functionality()
+        mock_process.assert_called_once()
+        _, kwargs = mock_process.call_args
+        assert kwargs["version_status"] == "superseded"
 
-    except Exception as e:
-        print(f"\nFAIL Test failed with error: {e}")
-        import traceback
-        traceback.print_exc()
+        mock_seq.assert_called_once()
 
-    # Summary
-    print("\n" + "="*80)
-    print("TEST SUMMARY")
-    print("="*80)
+        assert row["genbankAccession"] == "GCA_000222935.1"
 
-    for test_name, passed in results.items():
-        status = "PASS PASS" if passed else "FAIL FAIL"
-        print(f"  {status}: {test_name}")
+    @patch.object(backfill_module, "gh_utils")
+    @patch.object(backfill_module, "fetch_and_parse_sequence_report")
+    @patch.object(backfill_module, "process_assembly_report")
+    @patch.object(backfill_module, "utils")
+    def test_sets_assembly_id(
+        self, mock_utils, mock_process, mock_seq, mock_gh
+    ):
+        mock_utils.convert_keys_to_camel_case.return_value = {
+            "accession": "GCA_000222935.1"
+        }
+        mock_process.return_value = {
+            "processedAssemblyInfo": {
+                "genbankAccession": "GCA_000222935.1",
+            }
+        }
+        mock_gh.parse_report_values.return_value = {}
 
-    passed_count = sum(results.values())
-    total_count = len(results)
+        config = MagicMock()
+        backfill_module.parse_historical_version(
+            version_data={},
+            config=config,
+            base_accession="GCA_000222935",
+            version_num=1,
+            current_accession="GCA_000222935.2",
+        )
 
-    print(f"\n  Total: {passed_count}/{total_count} tests passed")
+        report = mock_process.return_value
+        assert report["processedAssemblyInfo"]["assemblyID"] == "GCA_000222935_1"
 
-    if passed_count == total_count:
-        print("\n  🎉 All tests passed!")
-        return 0
-    else:
-        print("\n  WARN Some tests failed - review output above")
-        return 1
 
-if __name__ == '__main__':
-    sys.exit(main())
+class TestBackfillOrchestrator:
+    """Integration tests for the backfill_historical_versions flow.
+
+    Mocks external dependencies (FTP, datasets CLI, parser functions, TSV
+    writer) so the test is fast and offline.  Focuses on verifying:
+    - All discovered versions are requested and parsed
+    - write_to_tsv is called exactly once with all accumulated rows
+    - Checkpoint does not clear the parsed dict (regression for data-loss bug)
+    """
+
+    def _make_jsonl(self, tmp_path, records):
+        """Write records to a JSONL fixture file."""
+        path = tmp_path / "input.jsonl"
+        lines = [json.dumps(r) for r in records]
+        path.write_text("\n".join(lines) + "\n")
+        return str(path)
+
+    @patch.object(backfill_module, "write_to_tsv")
+    @patch.object(backfill_module, "find_all_assembly_versions")
+    @patch.object(backfill_module, "parse_historical_version")
+    @patch.object(backfill_module, "utils")
+    def test_writes_tsv_once_with_all_rows(
+        self, mock_utils, mock_parse, mock_find, mock_write, tmp_path
+    ):
+        """Regression: old code wrote per-batch and cleared parsed dict."""
+        mock_utils.load_config.return_value = MagicMock(
+            meta={"file_name": "assembly_historical.tsv"}
+        )
+        mock_find.return_value = [
+            {"accession": "GCA_000222935.1"},
+        ]
+        mock_parse.return_value = {
+            "genbankAccession": "GCA_000222935.1",
+            "assemblyID": "GCA_000222935_1",
+        }
+
+        input_path = self._make_jsonl(tmp_path, [
+            {"accession": "GCA_000222935.2"},
+        ])
+        yaml_path = str(tmp_path / "config.yaml")
+
+        backfill_historical_versions(
+            input_path=input_path,
+            yaml_path=yaml_path,
+            work_dir=str(tmp_path),
+        )
+
+        mock_write.assert_called_once()
+        written_parsed = mock_write.call_args[0][0]
+        assert "GCA_000222935.1" in written_parsed
+
+    @patch.object(backfill_module, "write_to_tsv")
+    @patch.object(backfill_module, "find_all_assembly_versions")
+    @patch.object(backfill_module, "parse_historical_version")
+    @patch.object(backfill_module, "utils")
+    def test_multiple_assemblies_all_in_one_write(
+        self, mock_utils, mock_parse, mock_find, mock_write, tmp_path
+    ):
+        """All rows from multiple assemblies must appear in a single write."""
+        mock_utils.load_config.return_value = MagicMock(
+            meta={"file_name": "assembly_historical.tsv"}
+        )
+
+        def fake_find(accession, work_dir):
+            base = accession.split(".")[0]
+            return [{"accession": f"{base}.1"}]
+
+        mock_find.side_effect = fake_find
+
+        call_count = {"n": 0}
+
+        def fake_parse(version_data, **kwargs):
+            call_count["n"] += 1
+            acc = version_data["accession"]
+            return {"genbankAccession": acc, "assemblyID": acc.replace(".", "_")}
+
+        mock_parse.side_effect = fake_parse
+
+        input_path = self._make_jsonl(tmp_path, [
+            {"accession": "GCA_000222935.2"},
+            {"accession": "GCA_000412225.2"},
+            {"accession": "GCA_003706615.3"},
+        ])
+
+        backfill_historical_versions(
+            input_path=input_path,
+            yaml_path=str(tmp_path / "config.yaml"),
+            work_dir=str(tmp_path),
+        )
+
+        mock_write.assert_called_once()
+        written_parsed = mock_write.call_args[0][0]
+        assert len(written_parsed) == 3
+        assert "GCA_000222935.1" in written_parsed
+        assert "GCA_000412225.1" in written_parsed
+        assert "GCA_003706615.1" in written_parsed
+
+    @patch.object(backfill_module, "write_to_tsv")
+    @patch.object(backfill_module, "find_all_assembly_versions")
+    @patch.object(backfill_module, "parse_historical_version")
+    @patch.object(backfill_module, "utils")
+    def test_skips_current_version(
+        self, mock_utils, mock_parse, mock_find, mock_write, tmp_path
+    ):
+        """Versions >= current should not be parsed."""
+        mock_utils.load_config.return_value = MagicMock(
+            meta={"file_name": "out.tsv"}
+        )
+        mock_find.return_value = [
+            {"accession": "GCA_000222935.1"},
+            {"accession": "GCA_000222935.2"},
+        ]
+        mock_parse.return_value = {
+            "genbankAccession": "GCA_000222935.1",
+        }
+
+        input_path = self._make_jsonl(tmp_path, [
+            {"accession": "GCA_000222935.2"},
+        ])
+
+        backfill_historical_versions(
+            input_path=input_path,
+            yaml_path=str(tmp_path / "config.yaml"),
+            work_dir=str(tmp_path),
+        )
+
+        mock_parse.assert_called_once()
+        parsed_acc = mock_parse.call_args[1]["version_data"]["accession"]
+        assert parsed_acc == "GCA_000222935.1"
+
+    @patch.object(backfill_module, "write_to_tsv")
+    @patch.object(backfill_module, "find_all_assembly_versions")
+    @patch.object(backfill_module, "utils")
+    def test_no_write_when_nothing_to_backfill(
+        self, mock_utils, mock_find, mock_write, tmp_path
+    ):
+        """If all assemblies are v1, write_to_tsv should not be called."""
+        mock_utils.load_config.return_value = MagicMock(
+            meta={"file_name": "out.tsv"}
+        )
+        input_path = self._make_jsonl(tmp_path, [
+            {"accession": "GCA_000222935.1"},
+        ])
+
+        backfill_historical_versions(
+            input_path=input_path,
+            yaml_path=str(tmp_path / "config.yaml"),
+            work_dir=str(tmp_path),
+        )
+
+        mock_write.assert_not_called()
+
+    @patch.object(backfill_module, "write_to_tsv")
+    @patch.object(backfill_module, "find_all_assembly_versions")
+    @patch.object(backfill_module, "parse_historical_version")
+    @patch.object(backfill_module, "utils")
+    def test_checkpoint_does_not_clear_parsed(
+        self, mock_utils, mock_parse, mock_find, mock_write, tmp_path
+    ):
+        """Rows parsed before a checkpoint must still be in the final write.
+
+        This is the core regression test for Rich's bug report: 4006
+        assemblies processed, only 6 in the output file.
+        """
+        mock_utils.load_config.return_value = MagicMock(
+            meta={"file_name": "out.tsv"}
+        )
+
+        records = [
+            {"accession": f"GCA_{str(i).zfill(9)}.2"} for i in range(150)
+        ]
+        input_path = self._make_jsonl(tmp_path, records)
+
+        def fake_find(accession, work_dir):
+            base = accession.split(".")[0]
+            return [{"accession": f"{base}.1"}]
+
+        mock_find.side_effect = fake_find
+
+        def fake_parse(version_data, **kwargs):
+            acc = version_data["accession"]
+            return {"genbankAccession": acc}
+
+        mock_parse.side_effect = fake_parse
+
+        backfill_historical_versions(
+            input_path=input_path,
+            yaml_path=str(tmp_path / "config.yaml"),
+            work_dir=str(tmp_path),
+        )
+
+        mock_write.assert_called_once()
+        written_parsed = mock_write.call_args[0][0]
+        assert len(written_parsed) == 150
