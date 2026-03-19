@@ -88,6 +88,12 @@ def run_docker_flow(
     volume_mount = f"{repo_root}:{work_dir}"
     logger.info(f"Volume mount: {volume_mount}")
 
+    # Check for .s3cfg file in home directory
+    home_dir = os.path.expanduser("~")
+    s3cfg_path = os.path.join(home_dir, ".s3cfg")
+    has_s3cfg = os.path.isfile(s3cfg_path)
+    logger.info(f"S3 config file: {s3cfg_path} (exists: {has_s3cfg})")
+
     cmd = [
         "docker",
         "run",
@@ -98,12 +104,22 @@ def run_docker_flow(
         "SKIP_PREFECT=true",
         "-e",
         f"PYTHONPATH={work_dir}",
-        docker_image,
-        "python",
-        f"{work_dir}/{flow_script}",
-        "--output_path",
-        output_path,
     ]
+
+    # Mount .s3cfg if it exists
+    if has_s3cfg:
+        cmd.extend(["-v", f"{s3cfg_path}:/root/.s3cfg"])
+        logger.info(f"Mounting .s3cfg: {s3cfg_path}:/root/.s3cfg")
+
+    cmd.extend(
+        [
+            docker_image,
+            "python",
+            f"{work_dir}/{flow_script}",
+            "--output_path",
+            output_path,
+        ]
+    )
 
     if s3_path:
         cmd.extend(["--s3_path", s3_path])
