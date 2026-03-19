@@ -54,11 +54,11 @@ def run_docker_flow(
         logger.info(f"  S3 Path: {s3_path}")
 
     # Build Docker command
+    # Note: NOT using -it (interactive/tty) because this runs from Prefect agent without a terminal
     cwd = os.getcwd()
     cmd = [
         "docker",
         "run",
-        "-it",
         "--rm",
         "-v",
         f"{cwd}:{work_dir}",
