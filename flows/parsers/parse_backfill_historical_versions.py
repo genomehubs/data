@@ -24,13 +24,9 @@ from genomehubs import utils as gh_utils
 
 from flows.lib import utils
 from flows.lib.conditional_import import flow
-from flows.lib.shared_args import (
-    INPUT_PATH,
-    WORK_DIR,
-    YAML_PATH,
-    parse_args as _parse_args,
-    required,
-)
+from flows.lib.shared_args import INPUT_PATH, WORK_DIR, YAML_PATH
+from flows.lib.shared_args import parse_args as _parse_args
+from flows.lib.shared_args import required
 from flows.lib.utils import Config, Parser
 from flows.parsers.parse_ncbi_assemblies import (
     fetch_and_parse_sequence_report,
@@ -491,7 +487,7 @@ def backfill_historical_versions(
     print(f"  Processed: {processed}/{total_assemblies} assemblies")
     print(f"  Records written: {len(parsed)}")
     print(f"  Output: {config.meta['file_name']}")
-    print(f"\n  Next step: Run daily incremental pipeline")
+    print("\n  Next step: Run daily incremental pipeline")
     print(f"{'=' * 80}\n")
 
 
