@@ -13,6 +13,17 @@ from flows.lib.shared_args import (
 )
 from flows.lib.utils import upload_to_s3
 
+PROJECT_LIST = ["ASG", "AEGIS", "DTOL", "ERGAPI", "PSYCHE", "VGP"]
+
+ORDERED_MILESTONES = [
+    "sample_collected",
+    "sample_acquired",
+    "data_generation",
+    "in_assembly",
+    "submitted",
+    "published",
+]
+
 
 @task(retries=3, retry_delay_seconds=60, log_prints=True)
 def connect_to_portal():
@@ -92,13 +103,9 @@ def get_resample_status(species, *args):
 
 def pick_latest_status(species, *args):
     """Determine the latest sequencing status for a species based on multiple fields."""
+
     possible_status_rank = {
-        "published": 6,
-        "submitted": 5,
-        "in_assembly": 4,
-        "data_generation": 3,
-        "sample_acquired": 2,
-        "sample_collected": 1,
+        status: rank for rank, status in enumerate(ORDERED_MILESTONES, start=1)
     }
 
     statuses = [
@@ -123,21 +130,14 @@ def pick_latest_status(species, *args):
 def get_project_and_milestones(species):
     """Return a dictionary of project milestones and per-project sequencing status for a species."""
 
-    possible_projects = ["ASG", "AEGIS", "DTOL", "ERGAPI", "PSYCHE", "VGP"]
+    possible_projects = PROJECT_LIST
 
     projects = [p.upper() for p in (species.sts_sample_sts_project_union or [])]
     project_string = ",".join(projects)
 
     latest_status = pick_latest_status(species)
 
-    status_order = [
-        "sample_collected",
-        "sample_acquired",
-        "data_generation",
-        "in_assembly",
-        "submitted",
-        "published",
-    ]
+    status_order = ORDERED_MILESTONES
 
     # --- Milestones ---
     projects_in_milestone = {}
@@ -197,22 +197,10 @@ def fetch_tol_portal_status(file_path: str, min_lines: int) -> int:
         {"name": "latest_sequencing_status", "spec": pick_latest_status},
     ]
 
-    milestone_headers = [
-        "sample_collected",
-        "sample_acquired",
-        "data_generation",
-        "in_assembly",
-        "submitted",
-        "published",
-    ]
+    milestone_headers = ORDERED_MILESTONES
 
     status_project_headers = [
-        "sequencing_status_aegis",
-        "sequencing_status_asg",
-        "sequencing_status_dtol",
-        "sequencing_status_ergapi",
-        "sequencing_status_psyche",
-        "sequencing_status_vgp",
+        f"sequencing_status_{project.lower()}" for project in PROJECT_LIST
     ]
 
     header = (
