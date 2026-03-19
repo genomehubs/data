@@ -144,10 +144,8 @@ def run_docker_flow(
 
     # Mount .s3cfg if it exists
     if has_s3cfg:
-        # Mount to the non-root user's home directory if we're running as non-root
-        s3cfg_mount_path = f"{user_home_in_container}/.s3cfg" if user_home_in_container else "/root/.s3cfg"
-        cmd.extend(["-v", f"{s3cfg_path}:{s3cfg_mount_path}"])
-        logger.info(f"Mounting .s3cfg: {s3cfg_path} → {s3cfg_mount_path}")
+        cmd.extend(["-v", f"{s3cfg_path}:/tmp/.s3cfg:ro", "-e", "HOME=/tmp"])
+        logger.info(f"Mounting .s3cfg: {s3cfg_path} → /tmp/.s3cfg (read-only), HOME=/tmp")
 
     # Use module invocation (-m) to ensure proper Python path setup, matching the user's working command:
     # SKIP_PREFECT=true python -m flows.updaters.update_tol_genome_notes -o <output_path>
