@@ -88,6 +88,12 @@ def run_docker_flow(
     volume_mount = f"{repo_root}:{work_dir}"
     logger.info(f"Volume mount: {volume_mount}")
 
+    # Mount the output directory so files persist after container exits
+    output_dir = os.path.dirname(os.path.abspath(output_path))
+    os.makedirs(output_dir, exist_ok=True)
+    output_volume_mount = f"{output_dir}:{output_dir}"
+    logger.info(f"Output directory mount: {output_volume_mount}")
+
     # Check for .s3cfg file in home directory
     home_dir = os.path.expanduser("~")
     s3cfg_path = os.path.join(home_dir, ".s3cfg")
@@ -100,6 +106,8 @@ def run_docker_flow(
         "--rm",
         "-v",
         volume_mount,
+        "-v",
+        output_volume_mount,
         "-e",
         "SKIP_PREFECT=true",
         "-e",
@@ -181,8 +189,8 @@ def run_docker_flow(
             "s3_path": s3_path,
         }
 
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"{flow_name} timed out after 1 hour")
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"{flow_name} timed out after 1 hour") from e
     except Exception as e:
         logger.error(f"❌ {flow_name} failed: {str(e)}")
         raise
