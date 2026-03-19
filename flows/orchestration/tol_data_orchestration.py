@@ -100,24 +100,54 @@ def run_docker_flow(
     has_s3cfg = os.path.isfile(s3cfg_path)
     logger.info(f"S3 config file: {s3cfg_path} (exists: {has_s3cfg})")
 
+    # Get current user's UID and GID to run container as same user
+    # This prevents permission issues when Prefect tries to clean up temp directories
+    import grp
+    import pwd
+
+    user_home_in_container = None  # Track user's home dir in container
+    try:
+        current_user = os.getenv("USER", "root")
+        user_info = pwd.getpwnam(current_user)
+        uid = user_info.pw_uid
+        gid = grp.getgrgid(user_info.pw_gid).gr_gid
+        user_spec = f"{uid}:{gid}"
+        user_home_in_container = user_info.pw_dir  # Get the user's home directory
+        logger.info(f"Running Docker as user {current_user} ({user_spec}), home: {user_home_in_container}")
+    except (KeyError, ValueError):
+        # Fallback if user lookup fails
+        user_spec = None
+        logger.warning("Could not determine current user, running as root")
+
     cmd = [
         "docker",
         "run",
         "--rm",
-        "-v",
-        volume_mount,
-        "-v",
-        output_volume_mount,
-        "-e",
-        "SKIP_PREFECT=true",
-        "-e",
-        f"PYTHONPATH={work_dir}",
     ]
+
+    # Add --user flag if we determined the user
+    if user_spec:
+        cmd.extend(["--user", user_spec])
+
+    cmd.extend(
+        [
+            "-v",
+            volume_mount,
+            "-v",
+            output_volume_mount,
+            "-e",
+            "SKIP_PREFECT=true",
+            "-e",
+            f"PYTHONPATH={work_dir}",
+        ]
+    )
 
     # Mount .s3cfg if it exists
     if has_s3cfg:
-        cmd.extend(["-v", f"{s3cfg_path}:/root/.s3cfg"])
-        logger.info(f"Mounting .s3cfg: {s3cfg_path}:/root/.s3cfg")
+        # Mount to the non-root user's home directory if we're running as non-root
+        s3cfg_mount_path = f"{user_home_in_container}/.s3cfg" if user_home_in_container else "/root/.s3cfg"
+        cmd.extend(["-v", f"{s3cfg_path}:{s3cfg_mount_path}"])
+        logger.info(f"Mounting .s3cfg: {s3cfg_path} → {s3cfg_mount_path}")
 
     # Use module invocation (-m) to ensure proper Python path setup, matching the user's working command:
     # SKIP_PREFECT=true python -m flows.updaters.update_tol_genome_notes -o <output_path>
