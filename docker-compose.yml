@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  prefect-flows:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: genomehubs-prefect-flows
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /tmp/prefect-work:/tmp/prefect-work
+    environment:
+      # Skip Prefect imports to avoid pydantic compatibility issues
+      # The flow logic still runs, just without Prefect decorators
+      SKIP_PREFECT: "true"
+      # Set work directory
+      PREFECT_LOCAL_STORAGE_PATH: /tmp/prefect-work
+    ports:
+      - "4200:4200" # Prefect UI port if running locally
+    command: >
+      sh -c "pip show tol-sdk && 
+             pip show click && 
+             pip show pydantic && 
+             python flows/updaters/update_tol_genome_notes.py 
+             --output-path /tmp/tol_genome_notes.tsv"
