@@ -40,9 +40,7 @@ def parse_assembly_report(jsonl_path: str) -> Generator[dict, None, None]:
         raise RuntimeError(f"Error reading JSONL file: {e}") from e
 
 
-def fetch_ncbi_datasets_sequences(
-    accession: str, timeout: int = 30
-) -> Generator[dict, None, None]:
+def fetch_ncbi_datasets_sequences(accession: str, timeout: int = 30) -> Generator[dict, None, None]:
     """
     Fetches a sequence report from NCBI datasets for the given accession.
 
@@ -100,9 +98,7 @@ def is_atypical_assembly(report: dict, parsed: dict) -> bool:
     return False
 
 
-def process_assembly_report(
-    report: dict, previous_report: Optional[dict], config: Config, parsed: dict
-) -> dict:
+def process_assembly_report(report: dict, previous_report: Optional[dict], config: Config, parsed: dict) -> dict:
     """Process assembly level information.
 
     This function takes a data dictionary and an optional previous_report dictionary,
@@ -128,32 +124,22 @@ def process_assembly_report(
     processed_report = {**report, "processedAssemblyInfo": {"organelle": "nucleus"}}
     if "pairedAccession" in report:
         if processed_report["pairedAccession"].startswith("GCF_"):
-            processed_report["processedAssemblyInfo"]["refseqAccession"] = report[
-                "pairedAccession"
-            ]
-            processed_report["processedAssemblyInfo"]["genbankAccession"] = report[
-                "accession"
-            ]
+            processed_report["processedAssemblyInfo"]["refseqAccession"] = report["pairedAccession"]
+            processed_report["processedAssemblyInfo"]["genbankAccession"] = report["accession"]
         else:
-            processed_report["processedAssemblyInfo"]["refseqAccession"] = report[
-                "accession"
-            ]
-            processed_report["processedAssemblyInfo"]["genbankAccession"] = report[
-                "pairedAccession"
-            ]
+            processed_report["processedAssemblyInfo"]["refseqAccession"] = report["accession"]
+            processed_report["processedAssemblyInfo"]["genbankAccession"] = report["pairedAccession"]
     else:
-        processed_report["processedAssemblyInfo"]["genbankAccession"] = report[
-            "accession"
-        ]
+        processed_report["processedAssemblyInfo"]["genbankAccession"] = report["accession"]
     if (
         previous_report
         and processed_report["processedAssemblyInfo"]["genbankAccession"]
         == previous_report["processedAssemblyInfo"]["genbankAccession"]
     ):
         processed_report = previous_report | processed_report
-    if "refseqCategory" in processed_report.get(
-        "assemblyInfo", {}
-    ) or "refseqAccession" in processed_report.get("processedAssemblyInfo", {}):
+    if "refseqCategory" in processed_report.get("assemblyInfo", {}) or "refseqAccession" in processed_report.get(
+        "processedAssemblyInfo", {}
+    ):
         processed_report["processedAssemblyInfo"]["primaryValue"] = 1
 
     return processed_report
@@ -197,9 +183,7 @@ def fetch_and_parse_sequence_report(data: dict):
     try:
         chromosomes: list = []
         assigned_span = 0
-        for seq in fetch_ncbi_datasets_sequences(
-            accession, timeout=120 * (run_count + 1)
-        ):
+        for seq in fetch_ncbi_datasets_sequences(accession, timeout=120 * (run_count + 1)):
             if utils.is_non_nuclear(seq):
                 organelles[seq["chr_name"]].append(seq)
             elif utils.is_assigned_to_chromosome(seq):
@@ -214,9 +198,7 @@ def fetch_and_parse_sequence_report(data: dict):
     utils.add_chromosome_entries(data, chromosomes)
 
 
-def add_report_to_parsed_reports(
-    parsed: dict, report: dict, config: Config, biosamples: dict
-):
+def add_report_to_parsed_reports(parsed: dict, report: dict, config: Config, biosamples: dict):
     """
     Add the report to the parsed reports.
 
@@ -254,31 +236,30 @@ def add_report_to_parsed_reports(
 
 def use_previous_report(processed_report: dict, parsed: dict, config: Config):
     """
-    Use the previous report if the current report is the same as the previous one.
+    Reuse expensive sequence-derived fields if release date is unchanged.
+
+    Instead of copying the entire old row (which would preserve stale non-sequence values),
+    this function signals that we can skip fetching new sequence data because the
+    release date hasn't changed. The new data will be parsed normally, but expensive
+    fields will be reused from the previous report.
 
     Args:
         processed_report (dict): A dictionary containing processed assembly data.
         parsed (dict): A dictionary containing parsed data.
         config (Config): A Config object containing the configuration data.
+
+    Returns:
+        bool: True if release date is unchanged (sequence fields can be reused),
+              False otherwise (need to fetch new sequence data).
     """
     accession = processed_report["processedAssemblyInfo"]["genbankAccession"]
     if accession in config.previous_parsed:
         previous_report = config.previous_parsed[accession]
-        if (
-            processed_report["assemblyInfo"]["releaseDate"]
-            == previous_report["releaseDate"]
-        ):
-            if (
-                config.feature_file is not None
-                and accession in config.previous_features
-                and accession not in parsed
-            ):
-                utils.append_to_tsv(
-                    config.previous_features[accession],
-                    config.feature_headers,
-                    {"file_name": config.feature_file},
-                )
-            parsed[accession] = previous_report
+        if processed_report["assemblyInfo"]["releaseDate"] == previous_report["releaseDate"]:
+            # Release date is unchanged - we can reuse cached expensive fields
+            # but we should NOT copy the entire old row as that would preserve stale values
+            # Return True to signal "use cached sequence fields" but don't store anything yet
+            # The calling code will handle parsing the new data and overlaying cached fields
             return True
     return False
 
@@ -353,9 +334,7 @@ def _is_sequence_derived(path: str) -> bool:
     return root in SEQUENCE_DERIVED_ROOTS
 
 
-def get_cached_sequence_fields(
-    processed_report: dict, config: Config
-) -> Optional[dict]:
+def get_cached_sequence_fields(processed_report: dict, config: Config) -> Optional[dict]:
     """Return cached sequence-derived field values if releaseDate matches."""
     accession = processed_report["processedAssemblyInfo"]["genbankAccession"]
     if accession not in config.previous_parsed:
@@ -364,9 +343,7 @@ def get_cached_sequence_fields(
     previous_row = config.previous_parsed[accession]
 
     # Check release date
-    if processed_report["assemblyInfo"]["releaseDate"] != previous_row.get(
-        "releaseDate"
-    ):
+    if processed_report["assemblyInfo"]["releaseDate"] != previous_row.get("releaseDate"):
         return None
 
     # Find which headers correspond to sequence-derived paths
@@ -377,18 +354,11 @@ def get_cached_sequence_fields(
         for item in types_cfg.get(section, {}).values():
             path = item.get("path", "")
             header = item.get("header", "")
-            if header and any(
-                path.startswith(f"{root}.") or path == root
-                for root in SEQUENCE_DERIVED_ROOTS
-            ):
+            if header and any(path.startswith(f"{root}.") or path == root for root in SEQUENCE_DERIVED_ROOTS):
                 keep_headers.add(header)
 
     # Return dict with only the kept headers
-    return {
-        h: previous_row[h]
-        for h in keep_headers
-        if h in previous_row and previous_row[h]
-    }
+    return {h: previous_row[h] for h in keep_headers if h in previous_row and previous_row[h]}
 
 
 @task()
@@ -416,24 +386,45 @@ def process_assembly_reports(
     for report in parse_assembly_report(jsonl_path=jsonl_path):
         try:
             print(f"Processing report for {report.get('accession', 'unknown')}")
-            processed_report = process_assembly_report(
-                report, previous_report, config, parsed
-            )
-            if processed_report is None or use_previous_report(
-                processed_report, parsed, config
-            ):
+            processed_report = process_assembly_report(report, previous_report, config, parsed)
+            if processed_report is None:
                 continue
 
-            if cached_fields := get_cached_sequence_fields(processed_report, config):
-                # Apply parse functions to reconstruct nested structure
-                for header, value in cached_fields.items():
-                    if header in config.parse_fns:
-                        config.parse_fns[header](processed_report, value)
+            # Check if we can reuse cached sequence fields (release date unchanged)
+            can_reuse_cached = use_previous_report(processed_report, parsed, config)
+
+            # Always parse the new data to get fresh field values
+            # (don't copy the old row wholesale)
+
+            if can_reuse_cached:
+                # Get cached expensive sequence-derived fields if release date unchanged
+                cached_fields = get_cached_sequence_fields(processed_report, config)
+                # Fetch sequence data if cache miss, otherwise skip fetch
+                if not cached_fields:
+                    fetch_and_parse_sequence_report(processed_report)
+                # If we have cached fields, they'll be applied after parsing below
             else:
+                # Release date changed, fetch new sequence data
                 fetch_and_parse_sequence_report(processed_report)
 
             append_features(processed_report, config)
             add_report_to_parsed_reports(parsed, processed_report, config, biosamples)
+
+            # If we have cached fields, overlay them on the parsed row
+            if can_reuse_cached and (cached_fields := get_cached_sequence_fields(processed_report, config)):
+                accession = processed_report["processedAssemblyInfo"]["genbankAccession"]
+                if accession in parsed:
+                    # Overlay cached sequence-derived field values onto the newly parsed row
+                    for header, value in cached_fields.items():
+                        parsed[accession][header] = value
+
+                    # Also restore feature file entries if they exist
+                    if config.feature_file is not None and accession in config.previous_features:
+                        utils.append_to_tsv(
+                            config.previous_features[accession],
+                            config.feature_headers,
+                            {"file_name": config.feature_file},
+                        )
 
             if previous_report is not None:
                 previous_report = processed_report
@@ -498,22 +489,13 @@ def process_datafreeze_info(processed_report: dict, data_freeze: dict, config: C
     )
     print(f"Processing data freeze info for {data_freeze_name}")
     for line in processed_report.values():
-        print(
-            f"Processing data freeze info for {line['refseqAccession']} - "
-            f"{line['genbankAccession']}"
-        )
-        status = data_freeze.get(line["refseqAccession"]) or data_freeze.get(
-            line["genbankAccession"]
-        )
+        print(f"Processing data freeze info for {line['refseqAccession']} - " f"{line['genbankAccession']}")
+        status = data_freeze.get(line["refseqAccession"]) or data_freeze.get(line["genbankAccession"])
         if not status:
             continue
         line["dataFreeze"] = status
 
-        accession_name = (
-            line["refseqAccession"]
-            if line["refseqAccession"] in data_freeze
-            else line["genbankAccession"]
-        )
+        accession_name = line["refseqAccession"] if line["refseqAccession"] in data_freeze else line["genbankAccession"]
         line["assemblyID"] = f"{accession_name}_{data_freeze_name}"
 
 
@@ -554,9 +536,7 @@ def parse_ncbi_assemblies(
     if data_freeze_path is None:
         set_data_freeze_default(parsed, data_freeze_name="latest")
     else:
-        data_freeze = parse_data_freeze_file(
-            data_freeze_path
-        )  # This returns the data freeze dictionary
+        data_freeze = parse_data_freeze_file(data_freeze_path)  # This returns the data freeze dictionary
         process_datafreeze_info(parsed, data_freeze, config)
     write_to_tsv(parsed, config)
 
