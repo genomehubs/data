@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     tar \
     gzip \
+    s3cmd \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy project files
