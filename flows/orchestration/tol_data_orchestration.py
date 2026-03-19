@@ -101,15 +101,15 @@ def run_docker_flow(
         docker_image,
         "python",
         f"{work_dir}/{flow_script}",
-        "--output-path",
+        "--output_path",
         output_path,
     ]
 
     if s3_path:
-        cmd.extend(["--s3-path", s3_path])
+        cmd.extend(["--s3_path", s3_path])
 
     if min_records is not None:
-        cmd.extend(["--min-records", str(min_records)])
+        cmd.extend(["--min_records", str(min_records)])
 
     logger.info(f"Docker command: {' '.join(cmd)}")
 
