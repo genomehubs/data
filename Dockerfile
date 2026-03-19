@@ -26,7 +26,5 @@ RUN python -c "import genomehubs; print('genomehubs installed')" && \
     python -c "import pydantic; print(f'Pydantic {pydantic.__version__}')" && \
     echo "All dependencies verified and compatible!"
 
-# Set the entrypoint for running flows
-# Allow the container to execute arbitrary commands
-ENTRYPOINT []
-CMD ["python"]
+# No ENTRYPOINT or CMD - allows arbitrary commands to be executed
+# The docker run command will execute whatever is specified

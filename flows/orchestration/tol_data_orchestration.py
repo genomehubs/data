@@ -48,27 +48,52 @@ def run_docker_flow(
     logger = get_run_logger()
 
     logger.info(f"Starting {flow_name} in Docker...")
-    logger.info(f"  Script: {flow_script}")
-    logger.info(f"  Output: {output_path}")
+    logger.info(f"  Flow script: {flow_script}")
+    logger.info(f"  Output path: {output_path}")
     if s3_path:
-        logger.info(f"  S3 Path: {s3_path}")
+        logger.info(f"  S3 path: {s3_path}")
+    if min_records:
+        logger.info(f"  Min records: {min_records}")
 
     # Build Docker command
     # Note: NOT using -it (interactive/tty) because this runs from Prefect agent without a terminal
-    # Find the repository root relative to this script location
-    # (not using os.getcwd() because Prefect might run from a different working directory)
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    # script_dir is .../flows/orchestration, so go up two levels to get repo root
-    repo_root = os.path.dirname(os.path.dirname(script_dir))
+    # Get the repository root from current working directory
+    # (When Prefect runs, cwd should be the cloned repository root)
+    repo_root = os.getcwd()
 
     logger.info(f"Repository root: {repo_root}")
+    logger.info(f"Repository root exists: {os.path.isdir(repo_root)}")
+
+    # List key files to debug path issues
+    flows_dir = os.path.join(repo_root, "flows")
+    if os.path.isdir(flows_dir):
+        logger.info("flows/ directory exists")
+        updaters_dir = os.path.join(flows_dir, "updaters")
+        if os.path.isdir(updaters_dir):
+            logger.info("flows/updaters/ directory exists")
+            flow_script_full = os.path.join(repo_root, flow_script)
+            logger.info(f"Flow script location: {flow_script_full}")
+            logger.info(f"Flow script exists: {os.path.isfile(flow_script_full)}")
+        else:
+            logger.warning("flows/updaters/ directory NOT found")
+    else:
+        logger.warning(f"flows/ directory NOT found in {repo_root}")
+
+    # Log Docker info
+    docker_version = subprocess.run(["docker", "--version"], capture_output=True, text=True, timeout=5)
+    if docker_version.returncode == 0:
+        logger.info(f"Docker: {docker_version.stdout.strip()}")
+
+    # Build Docker command
+    volume_mount = f"{repo_root}:{work_dir}"
+    logger.info(f"Volume mount: {volume_mount}")
 
     cmd = [
         "docker",
         "run",
         "--rm",
         "-v",
-        f"{repo_root}:{work_dir}",
+        volume_mount,
         "-e",
         "SKIP_PREFECT=true",
         docker_image,
@@ -84,10 +109,11 @@ def run_docker_flow(
     if min_records is not None:
         cmd.extend(["--min-records", str(min_records)])
 
-    logger.info(f"Running command: {' '.join(cmd)}")
+    logger.info(f"Docker command: {' '.join(cmd)}")
 
     # Execute Docker container
     try:
+        logger.info("Executing Docker container...")
         result = subprocess.run(
             cmd,
             check=False,
@@ -96,28 +122,33 @@ def run_docker_flow(
             timeout=3600,  # 1 hour timeout
         )
 
+        logger.info(f"Docker exit code: {result.returncode}")
+
         # Log output
         if result.stdout:
-            logger.info(f"STDOUT:\n{result.stdout}")
+            logger.info(f"Docker STDOUT:\n{result.stdout}")
         if result.stderr:
-            logger.warning(f"STDERR:\n{result.stderr}")
+            logger.warning(f"Docker STDERR:\n{result.stderr}")
 
         # Check for success
         if result.returncode != 0:
             raise RuntimeError(f"{flow_name} failed with exit code {result.returncode}: {result.stderr}")
 
-        logger.info(f"✅ {flow_name} completed successfully")
+        logger.info(f"✅ {flow_name} Docker execution completed")
 
         # Count output file lines if it exists
         line_count = 0
+        logger.info(f"Checking output file: {output_path}")
         if os.path.exists(output_path):
             with open(output_path, "r") as f:
                 line_count = sum(1 for _ in f)
-            logger.info(f"Output file has {line_count} lines")
+            logger.info(f"Output file exists with {line_count} lines")
 
             # Validate minimum records if specified
             if min_records and line_count < min_records:
                 raise RuntimeError(f"Output has only {line_count} lines, minimum {min_records} required")
+        else:
+            logger.warning(f"Output file does NOT exist at {output_path}")
 
         return {
             "status": "success",
