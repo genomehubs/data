@@ -14,9 +14,8 @@ Covers:
 import json
 import os
 import sys
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -24,10 +23,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 os.environ["SKIP_PREFECT"] = "true"
 
-from flows.parsers import (
+from flows.parsers import (  # noqa: E402
     parse_backfill_historical_versions as backfill_module,
 )
-from flows.parsers.parse_backfill_historical_versions import (
+from flows.parsers.parse_backfill_historical_versions import (  # noqa: E402
     ACCESSION_PATTERN,
     backfill_historical_versions,
     derive_checkpoint_path,
