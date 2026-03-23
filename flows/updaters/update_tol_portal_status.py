@@ -13,7 +13,7 @@ from flows.lib.shared_args import (
 )
 from flows.lib.utils import upload_to_s3
 
-PROJECT_LIST = ["ASG", "AEGIS", "DTOL", "ERGAPI", "PSYCHE", "VGP"]
+PROJECT_LIST = ["AEGIS", "ASG", "BAT1K", "DTOL", "ERGA", "ERGAPI", "PSYCHE", "VGP"]
 
 ORDERED_MILESTONES = [
     "sample_collected",
