@@ -165,6 +165,8 @@ def get_field_value(obj, field_spec):
     value = obj
     for attr in field_spec.split("."):
         value = getattr(value, attr)
+        if value is None:
+            return None
     return value
 
 
@@ -212,12 +214,17 @@ def fetch_tol_portal_status(file_path: str, min_lines: int) -> int:
     line_count = 0
     print("Writing ToL Portal project data to file...")
 
-    with open(file_path, "w") as tsv_file:
+    with open(file_path, "w", encoding="utf-8", newline="") as tsv_file:
         tsv_file.write("\t".join(header) + "\n")
 
         for species in filtered_set:
             sts_values = [
-                str(get_field_value(species, field["spec"]) or "") for field in fields
+                str(
+                    ""
+                    if get_field_value(species, field["spec"]) is None
+                    else get_field_value(species, field["spec"])
+                )
+                for field in fields
             ]
 
             milestones, project_statuses = get_project_and_milestones(species)
