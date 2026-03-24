@@ -67,7 +67,7 @@ def get_acquired_status(species, *args):
 
 
 def get_in_the_lab_status(species, *args):
-    """Return 'data_generation' if species has a  date of active lab work, otherwise empty string."""
+    """Return 'data_generation' if species has a date of active lab work, otherwise empty string."""
     return (
         "data_generation"
         if species.benchling_tissue_prep_benchling_sampleprep_date_min
