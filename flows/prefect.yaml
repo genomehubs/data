@@ -237,3 +237,17 @@ deployments:
     schedules:
       - *daily
     work_pool: *goat_data_work_pool
+
+  - name: update-tol-portal-status
+    # This flow updates the status milestones of projects in the ToL portal
+    entrypoint: flows/updaters/update_tol_portal_status.py:update_tol_portal_status
+    parameters:
+      # Local path to save the ToL portal status TSV file
+      output_path: "/home/ubuntu/tmp/test/status-lists/tol_project_status_expanded.tsv"
+      # The S3 path to save the ToL portal status TSV file
+      s3_path: s3://goat/resources/status-lists/tol_project_status_expanded.tsv
+      # Minimum number of records expected in the ToL portal status
+      min_records: 8300
+    schedules:
+      - *daily
+    work_pool: *goat_data_work_pool
