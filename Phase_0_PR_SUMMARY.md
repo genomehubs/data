@@ -36,9 +36,9 @@ milestone tracking by capturing previously untracked superseded versions.
 - **Code style** aligned with GenomeHubs conventions: Google-style docstrings,
   lowercase type hints (`dict`, `list`, `tuple`), `e` for exception variables,
   removed shebang and section banners.
-- **`assembly_historical.yaml`**: moved `needs` under `file:` section and
+- **`assembly_historical.types.yaml`**: moved `needs` under `file:` section,
   references `ATTR_assembly.types.yaml` (matches `ncbi_datasets_eukaryota`
-  convention).
+  convention), and renamed `names` → `taxon_names` for validation compliance.
 
 ### Test suite rewrite
 - Rewrote `tests/test_backfill.py` using pytest (was a custom runner).
@@ -70,14 +70,17 @@ The backfill script:
 
 ### Checkpoint System
 - Saves progress every 100 assemblies to `{work_dir}/checkpoints/`
-- Allows resuming after interruptions
+- Allows resuming after interruptions without re-fetching cached data
+- Marks the checkpoint as `completed` at the end of a full run so the next
+  re-run starts from index 0 (all rows collected; network fetches still served
+  from cache)
 - Does **not** trigger intermediate TSV writes (avoids the overwrite bug)
 
 ## Files
 
 ### New
 - `flows/parsers/parse_backfill_historical_versions.py` — Main backfill flow
-- `configs/assembly_historical.yaml` — Output schema configuration
+- `configs/assembly_historical.types.yaml` — Output schema configuration
 - `tests/test_backfill.py` — pytest suite (33 tests)
 - `tests/test_data/assembly_test_sample.jsonl` — Test fixture (3 assemblies)
 
@@ -90,7 +93,7 @@ The backfill script:
 ```bash
 python -m flows.parsers.parse_backfill_historical_versions \
     --input_path data/assembly_data_report.jsonl \
-    --yaml_path configs/assembly_historical.yaml \
+    --yaml_path configs/assembly_historical.types.yaml \
     --work_dir tmp
 ```
 

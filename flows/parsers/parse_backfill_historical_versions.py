@@ -6,7 +6,7 @@ Run once before starting the daily incremental pipeline.
 Usage:
     python -m flows.parsers.parse_backfill_historical_versions \\
         --input_path data/assembly_data_report.jsonl \\
-        --yaml_path configs/assembly_historical.yaml \\
+        --yaml_path configs/assembly_historical.types.yaml \\
         --work_dir tmp
 """
 
@@ -334,17 +334,23 @@ def load_checkpoint(checkpoint_file: str) -> dict:
     return {}
 
 
-def save_checkpoint(checkpoint_file: str, processed_count: int):
+def save_checkpoint(
+    checkpoint_file: str, processed_count: int, completed: bool = False
+):
     """Persist current progress to the checkpoint file.
 
     Args:
         checkpoint_file (str): Path to the checkpoint JSON file.
         processed_count (int): Number of assemblies processed so far.
+        completed (bool): True when the full run finished successfully.
+            A completed checkpoint resets start_index on the next run so
+            all entries are re-collected (using cached network data).
     """
     Path(checkpoint_file).parent.mkdir(parents=True, exist_ok=True)
     with open(checkpoint_file, "w") as f:
         json.dump({
             "processed_count": processed_count,
+            "completed": completed,
             "timestamp": datetime.now().isoformat(),
         }, f, indent=2)
 
@@ -390,7 +396,7 @@ def backfill_historical_versions(
 
     Args:
         input_path (str): Path to assembly_data_report.jsonl.
-        yaml_path (str): Path to assembly_historical.yaml.
+        yaml_path (str): Path to assembly_historical.types.yaml.
         work_dir (str): Working directory for caches, checkpoints, and output.
         checkpoint_file (str, optional): Explicit checkpoint path. Derived
             from inputs when omitted.
@@ -409,7 +415,13 @@ def backfill_historical_versions(
         return
 
     checkpoint = load_checkpoint(checkpoint_file)
-    start_index = checkpoint.get("processed_count", 0)
+    # A completed checkpoint means the previous run finished successfully.
+    # Reset to 0 so all entries are collected again (network fetches still use
+    # the on-disk cache, so the re-run is fast).
+    if checkpoint.get("completed", False):
+        start_index = 0
+    else:
+        start_index = checkpoint.get("processed_count", 0)
 
     total_assemblies = len(assemblies)
     total_versions = sum(
@@ -480,6 +492,8 @@ def backfill_historical_versions(
     if parsed:
         print(f"\nWriting {len(parsed)} records to TSV...")
         write_to_tsv(parsed, config)
+
+    save_checkpoint(checkpoint_file, processed, completed=True)
 
     print(f"\n{'=' * 80}")
     print("BACKFILL COMPLETE")
