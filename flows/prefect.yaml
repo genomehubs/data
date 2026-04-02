@@ -232,7 +232,7 @@ deployments:
     # - Emits Prefect events for downstream flow triggering
     # - Reports success/failure through Prefect UI
     description: "Orchestrates tol-genome-notes flow in Docker with dependency isolation"
-    entrypoint: flows/orchestration/tol_data_orchestration.py:orchestrate_tol_genome_notes
+    entrypoint: flows/orchestrators/tol_genome_notes_orchestration.py:orchestrate_tol_genome_notes
     parameters:
       # Local path to save the ToL genome notes TSV file
       output_path: "/home/ubuntu/tmp/test/status-lists/tol_genome_notes_expanded.tsv"
@@ -245,9 +245,15 @@ deployments:
       - *daily
     work_pool: *goat_data_work_pool
 
-  - name: update-tol-portal-status
-    # This flow updates the status milestones of projects in the ToL portal
-    entrypoint: flows/updaters/update_tol_portal_status.py:update_tol_portal_status
+  - name: orchestrate-tol-portal-status
+    # Orchestrated flow that runs tol-portal-status in Docker with dependency isolation
+    # This approach:
+    # - Runs lightweight Prefect logic (no pydantic issues)
+    # - Delegates to Docker with SKIP_PREFECT=true for tol-sdk execution
+    # - Emits Prefect events for downstream flow triggering
+    # - Reports success/failure through Prefect UI
+    description: "Orchestrates tol-portal-status flow in Docker with dependency isolation"
+    entrypoint: flows/orchestrators/tol_portal_status_orchestration.py:orchestrate_tol_portal_status
     parameters:
       # Local path to save the ToL portal status TSV file
       output_path: "/home/ubuntu/tmp/test/status-lists/tol_project_status_expanded.tsv"

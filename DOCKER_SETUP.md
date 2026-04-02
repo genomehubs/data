@@ -97,7 +97,7 @@ docker run -it --rm -v $(pwd):/app -e SKIP_PREFECT=true \
   --output-path /tmp/output.tsv
 ````
 
-**Pros:** Simple, no Prefect overhead  
+**Pros:** Simple, no Prefect overhead
 **Cons:** No event-based triggering, can't track in Prefect UI, manual orchestration
 
 ### Option 2: Docker Work Pool (Native but Complex)
@@ -112,7 +112,7 @@ deployments:
       name: docker-pool
 ```
 
-**Pros:** Native Prefect integration  
+**Pros:** Native Prefect integration
 **Cons:** Requires Docker work pool setup, may have Pydantic issues, more complex
 
 ### Option 3: Orchestration Layer (Recommended) ⭐
@@ -140,10 +140,10 @@ deployments:
 
 ## Recommended: Orchestration Flow Approach
 
-We've created [flows/orchestration/tol_data_orchestration.py](flows/orchestration/tol_data_orchestration.py) which demonstrates this pattern:
+We've created [flows/orchestrators/](flows/orchestrators/) which demonstrates this pattern:
 
 ```python
-from flows.orchestration.tol_data_orchestration import orchestrate_tol_genome_notes
+from flows.orchestrators import orchestrate_tol_genome_notes
 
 # This runs:
 # 1. Orchestration in Prefect (lightweight, no imports of tol-sdk)

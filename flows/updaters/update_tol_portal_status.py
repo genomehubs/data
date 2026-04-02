@@ -1,17 +1,9 @@
 import os
 
-from tol.core import DataSourceFilter
-from tol.sources.portal import portal
-
 from flows.lib.conditional_import import emit_event, flow, task
-from flows.lib.shared_args import (
-    MIN_RECORDS,
-    OUTPUT_PATH,
-    S3_PATH,
-    parse_args,
-    required,
-)
+from flows.lib.shared_args import MIN_RECORDS, OUTPUT_PATH, S3_PATH, parse_args, required
 from flows.lib.utils import upload_to_s3
+from flows.updaters.tol_utils import get_field_value
 
 PROJECT_LIST = ["AEGIS", "ASG", "BAT1K", "DTOL", "ERGA", "ERGAPI", "PSYCHE", "VGP"]
 
@@ -34,6 +26,10 @@ def connect_to_portal():
     and therefore whether it is likely to be included in the declared status lists.
     This is a proxy for whether a species has been physically collected and the manifest is approved.
     """
+    # Import here to defer tol dependency and avoid Pydantic conflicts
+    from tol.core import DataSourceFilter
+    from tol.sources.portal import portal
+
     print("Connecting to ToL portal...")
     prtl = portal()
     data_filter = DataSourceFilter()
@@ -68,11 +64,7 @@ def get_acquired_status(species, *args):
 
 def get_in_the_lab_status(species, *args):
     """Return 'data_generation' if species has a date of active lab work, otherwise empty string."""
-    return (
-        "data_generation"
-        if species.benchling_tissue_prep_benchling_sampleprep_date_min
-        else ""
-    )
+    return "data_generation" if species.benchling_tissue_prep_benchling_sampleprep_date_min else ""
 
 
 def map_tola_status(species, *args):
@@ -87,26 +79,18 @@ def map_tola_status(species, *args):
         "7 ignore": "data_generation",
     }
 
-    return status_to_map.get(
-        species.informatics_tolid_informatics_status_summary_min, ""
-    )
+    return status_to_map.get(species.informatics_tolid_informatics_status_summary_min, "")
 
 
 def get_resample_status(species, *args):
     """Return project acronyms if species is flagged for recollection, otherwise empty string."""
-    return (
-        get_projects(species)
-        if species.sts_sequencing_material_status == "RECOLLECTION_REQUIRED"
-        else ""
-    )
+    return get_projects(species) if species.sts_sequencing_material_status == "RECOLLECTION_REQUIRED" else ""
 
 
 def pick_latest_status(species, *args):
     """Determine the latest sequencing status for a species based on multiple fields."""
 
-    possible_status_rank = {
-        status: rank for rank, status in enumerate(ORDERED_MILESTONES, start=1)
-    }
+    possible_status_rank = {status: rank for rank, status in enumerate(ORDERED_MILESTONES, start=1)}
 
     statuses = [
         get_collected_status(species),
@@ -159,22 +143,6 @@ def get_project_and_milestones(species):
     return projects_in_milestone, project_latest_status
 
 
-def get_field_value(obj, field_spec):
-    if callable(field_spec):
-        return field_spec(obj)
-    value = obj
-    for attr in field_spec.split("."):
-        value = getattr(value, attr)
-        if value is None:
-            return None
-    return value
-
-
-# -----------------------------
-# Main task
-# -----------------------------
-
-
 @task(log_prints=True)
 def fetch_tol_portal_status(file_path: str, min_lines: int) -> int:
 
@@ -201,13 +169,9 @@ def fetch_tol_portal_status(file_path: str, min_lines: int) -> int:
 
     milestone_headers = ORDERED_MILESTONES
 
-    status_project_headers = [
-        f"sequencing_status_{project.lower()}" for project in PROJECT_LIST
-    ]
+    status_project_headers = [f"sequencing_status_{project.lower()}" for project in PROJECT_LIST]
 
-    header = (
-        [field["name"] for field in fields] + milestone_headers + status_project_headers
-    )
+    header = [field["name"] for field in fields] + milestone_headers + status_project_headers
 
     filtered_set = connect_to_portal()
 
@@ -219,22 +183,15 @@ def fetch_tol_portal_status(file_path: str, min_lines: int) -> int:
 
         for species in filtered_set:
             sts_values = [
-                str(
-                    ""
-                    if get_field_value(species, field["spec"]) is None
-                    else get_field_value(species, field["spec"])
-                )
+                str("" if get_field_value(species, field["spec"]) is None else get_field_value(species, field["spec"]))
                 for field in fields
             ]
 
             milestones, project_statuses = get_project_and_milestones(species)
 
-            milestone_values = [
-                milestones.get(milestone, "") for milestone in milestone_headers
-            ]
+            milestone_values = [milestones.get(milestone, "") for milestone in milestone_headers]
             status_project_values = [
-                project_statuses.get(project_status, "")
-                for project_status in status_project_headers
+                project_statuses.get(project_status, "") for project_status in status_project_headers
             ]
 
             tsv_file.write(
@@ -249,9 +206,7 @@ def fetch_tol_portal_status(file_path: str, min_lines: int) -> int:
             line_count += 1
 
     if line_count < min_lines:
-        raise RuntimeError(
-            f"File {file_path} has less than {min_lines} lines: {line_count}"
-        )
+        raise RuntimeError(f"File {file_path} has less than {min_lines} lines: {line_count}")
 
     print(f"Finished writing TSV file. Line count: {line_count}")
     return line_count

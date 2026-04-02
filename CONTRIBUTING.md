@@ -352,6 +352,64 @@ SKIP_PREFECT=true python3 -m flows.updaters.update_my_source \
   -o /tmp/output.jsonl
 ```
 
+### Handling Incompatible Dependencies: Orchestrators
+
+**Only use orchestrators if your updater introduces dependencies that conflict with Prefect.** This is a rare edge case (e.g., tol-sdk requires Pydantic < 2.0, but Prefect needs 2.0+).
+
+❌ **DO NOT** try to force incompatible dependencies into standard Prefect environment.
+❌ **DO NOT** create orchestrators for updaters that work fine in Prefect.
+⚠️ **REMEMBER:** Orchestrators add complexity. Only use when absolutely necessary.
+
+**If your updater has incompatible dependencies:**
+
+1. Create the updater normally in `flows/updaters/` (it will fail in Prefect, but works with `SKIP_PREFECT=true`)
+2. Create an orchestrator wrapper in `flows/orchestrators/`:
+
+```python
+# flows/orchestrators/my_updater_orchestration.py
+from flows.orchestrators.tasks import run_docker_flow, emit_completion_event
+from prefect import flow, get_run_logger
+
+@flow(name="my-updater-orchestration")
+def orchestrate_my_updater(
+    output_path: str = "/tmp/my_output.tsv",
+    s3_path: str = None,
+    min_records: int = 1,
+) -> dict:
+    """Run my_updater in Docker to avoid dependency conflicts."""
+    logger = get_run_logger()
+
+    result = run_docker_flow(
+        flow_name="my-updater",
+        flow_script="flows/updaters/update_my_source.py",
+        output_path=output_path,
+        s3_path=s3_path,
+        min_records=min_records,
+    )
+
+    emit_completion_event(
+        flow_name="my-updater",
+        result=result,
+        resource_type="my.updater",
+    )
+
+    logger.info(f"🎉 Orchestration complete: {result}")
+    return result
+```
+
+3. Register in `flows/prefect.yaml` instead of the raw updater:
+
+```yaml
+- name: orchestrate-my-updater
+  entrypoint: flows/orchestrators/my_updater_orchestration.py:orchestrate_my_updater
+  parameters:
+    output_path: "/home/ubuntu/tmp/test/my_output.tsv"
+    s3_path: s3://goat/resources/my_output.tsv
+    min_records: 100
+```
+
+**Key constraint:** Orchestrators are **ONLY for updaters**. Parsers and validators must never introduce dependencies incompatible with Prefect/GenomeHubs.
+
 ---
 
 ## Creating a Validator

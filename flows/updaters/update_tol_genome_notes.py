@@ -1,17 +1,9 @@
 import os
 
-from tol.core import DataSourceFilter
-from tol.sources.portal import portal
-
 from flows.lib.conditional_import import emit_event, flow, task
-from flows.lib.shared_args import (
-    MIN_RECORDS,
-    OUTPUT_PATH,
-    S3_PATH,
-    parse_args,
-    required,
-)
+from flows.lib.shared_args import MIN_RECORDS, OUTPUT_PATH, S3_PATH, parse_args, required
 from flows.lib.utils import upload_to_s3
+from flows.updaters.tol_utils import get_field_value
 
 
 @task(retries=3, retry_delay_seconds=60, log_prints=True)
@@ -19,6 +11,10 @@ def connect_to_portal():
     """Connect to the ToL portal and retrieve the filtered set of genome notes.
     Get the subset of species that have a value for gn_date_published.
     This is a proxy for whether there is any genome note for a species"""
+    # Import here to defer tol dependency and avoid Pydantic conflicts
+    from tol.core import DataSourceFilter
+    from tol.sources.portal import portal
+
     print("Connecting to ToL portal...")
     prtl = portal()
     data_filter = DataSourceFilter()
@@ -56,16 +52,6 @@ def get_published_status_project(genome_note, field_name=None):
     return "published" if project_acronym in projects else ""
 
 
-def get_field_value(obj, field_spec, field_name=None):
-    """Get value from object using string path or callable."""
-    if not isinstance(field_spec, str):
-        return field_spec(obj, field_name) if field_name else field_spec(obj)
-    value = obj
-    for attr in field_spec.split("."):
-        value = getattr(value, attr)
-    return value
-
-
 @task(log_prints=True)
 def fetch_tol_genome_notes(file_path: str, min_lines: int) -> int:
 
@@ -96,18 +82,13 @@ def fetch_tol_genome_notes(file_path: str, min_lines: int) -> int:
         tsv_file.write("\t".join(header) + "\n")
 
         for genome_note in filtered_set:
-            row = [
-                str(get_field_value(genome_note, field["spec"], field["name"]) or "")
-                for field in fields
-            ]
+            row = [str(get_field_value(genome_note, field["spec"], field["name"]) or "") for field in fields]
             tsv_file.write("\t".join(row) + "\n")
             line_count += 1
 
     # If the file has less than min_lines lines, raise an error
     if line_count < min_lines:
-        raise RuntimeError(
-            f"File {file_path} has less than {min_lines} lines: {line_count}"
-        )
+        raise RuntimeError(f"File {file_path} has less than {min_lines} lines: {line_count}")
     print(f"Finished writing ToL genome notes to file. Line count: {line_count}")
     # Return the line counts
     return line_count
