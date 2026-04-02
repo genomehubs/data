@@ -1,18 +1,9 @@
 import os
 from urllib.parse import urlencode
 
-from conditional_import import flow, task
-from shared_args import (
-    ASSEMBLY_ID,
-    HTTP_PATH,
-    S3_PATH,
-    TAXON_ID,
-    WORK_DIR,
-    multi,
-    parse_args,
-    required,
-)
-from utils import find_http_file, find_s3_file, get_genomehubs_attribute_value, safe_get
+from flows.lib.conditional_import import flow, task
+from flows.lib.shared_args import ASSEMBLY_ID, HTTP_PATH, S3_PATH, TAXON_ID, WORK_DIR, multi, parse_args, required
+from flows.lib.utils import find_http_file, find_s3_file, get_genomehubs_attribute_value, safe_get
 
 
 @task()
@@ -55,10 +46,7 @@ def list_busco_lineages(assembly_id: str, work_dir: str) -> list:
     # Fetch the list of BUSCO lineages
     response = safe_get(url)
     response.raise_for_status()
-    return [
-        get_genomehubs_attribute_value(result, "odb10_lineage")
-        for result in response.json()["results"]
-    ]
+    return [get_genomehubs_attribute_value(result, "odb10_lineage") for result in response.json()["results"]]
 
 
 @task()
@@ -123,9 +111,7 @@ def find_blobtoolkit_files(assembly_id, work_dir, http_path):
 
 
 @flow()
-def index_assembly_features(
-    assembly_id: str, taxon_id: str, work_dir: str, s3_path: list, http_path: list
-) -> None:
+def index_assembly_features(assembly_id: str, taxon_id: str, work_dir: str, s3_path: list, http_path: list) -> None:
     # if snapshot_exists(s3_path, assembly_id, "feature"):
     #     return taxon_id
     # find_files(assembly_id, work_dir, s3_path)

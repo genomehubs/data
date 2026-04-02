@@ -2,9 +2,9 @@ import os
 from enum import Enum
 from typing import Optional
 
-from conditional_import import flow
-from fetch_previous_file_pair import fetch_previous_file_pair
-from shared_args import (
+from flows.lib.conditional_import import flow
+from flows.lib.fetch_previous_file_pair import fetch_previous_file_pair
+from flows.lib.shared_args import (
     APPEND,
     DATA_FREEZE_PATH,
     DRY_RUN,
@@ -17,10 +17,9 @@ from shared_args import (
     parse_args,
     required,
 )
-from utils import enum_action
-from validate_file_pair import validate_file_pair
-
+from flows.lib.utils import enum_action
 from flows.parsers.register import register_plugins  # noqa: E402
+from flows.validators.validate_file_pair import validate_file_pair
 
 PARSERS = register_plugins()
 
@@ -60,9 +59,7 @@ def fetch_parse_validate(
         min_valid (int, optional): Minimum expected number of valid rows.
         min_assigned (int, optional): Minimum expected number of assigned taxa.
     """
-    header_status = fetch_previous_file_pair(
-        yaml_path=yaml_path, s3_path=s3_path, work_dir=work_dir
-    )
+    header_status = fetch_previous_file_pair(yaml_path=yaml_path, s3_path=s3_path, work_dir=work_dir)
     if not header_status:
         # If the headers do not match, set append == False to parse all records
         append = False
@@ -77,9 +74,7 @@ def fetch_parse_validate(
     if dry_run:
         # set s3_path = None to skip copying the validated file to S3/git
         s3_path = None
-    validate_file_pair(
-        yaml_path, work_dir, taxdump_path, s3_path, min_valid, min_assigned
-    )
+    validate_file_pair(yaml_path, work_dir, taxdump_path, s3_path, min_valid, min_assigned)
 
 
 if __name__ == "__main__":

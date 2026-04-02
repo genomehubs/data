@@ -1,3 +1,5 @@
+"""Validate data quality and schema compliance."""
+
 import json
 import os
 import shutil
@@ -9,18 +11,8 @@ import boto3
 
 from flows.lib import utils
 from flows.lib.conditional_import import emit_event, flow, task
-from flows.lib.shared_args import (
-    MIN_ASSIGNED,
-    MIN_VALID,
-    S3_PATH,
-    TAXDUMP_PATH,
-    WORK_DIR,
-    YAML_PATH,
-    default,
-    parse_args,
-    required,
-)
 from flows.lib.shared_tasks import get_filenames
+from flows.validators.args import parse_args
 
 
 @task(log_prints=True)
@@ -29,7 +21,7 @@ def validate_yaml_file(
     taxdump_path: Optional[str] = None,
     min_valid: int = 0,
     min_assigned: int = 0,
-) -> bool:
+) -> tuple:
     """
     Validate the YAML file using blobtk validate.
 
@@ -40,7 +32,7 @@ def validate_yaml_file(
         min_assigned (int): Minimum expected number of assigned taxa.
 
     Returns:
-        bool: True if the YAML file is valid, False otherwise.
+        tuple: (status, validation_report, taxonomy_report).
     """
     if not utils.is_safe_path(yaml_path):
         raise ValueError(f"Unsafe YAML path: {yaml_path}")
@@ -113,6 +105,12 @@ def check_min_counts(validation_report, taxonomy_report, min_valid, min_assigned
         taxonomy_report (dict): The taxonomy report.
         min_valid (int): Minimum expected number of valid rows.
         min_assigned (int): Minimum expected number of assigned taxa.
+
+    Returns:
+        bool: True if all checks pass.
+
+    Raises:
+        ValueError: If counts are below minimum thresholds.
     """
     if validation_report is not None:
         valid_count = int(validation_report.get("valid", 0))
@@ -135,9 +133,12 @@ def validate_file_pair(
     s3_path: Optional[str] = None,
     min_valid: int = 1,
     min_assigned: int = 1,
-) -> None:
+) -> bool:
     """
-    Validate the previous YAML/TSV files.
+    Validate the YAML/TSV file pair against schema and taxonomy.
+
+    Checks that the TSV file conforms to the schema defined in the YAML
+    configuration file, and optionally validates taxonomy assignments.
 
     Args:
         yaml_path (str): Path to the source YAML file.
@@ -146,16 +147,21 @@ def validate_file_pair(
         s3_path (str): Path to the TSV directory on S3.
         min_valid (int): Minimum expected number of valid rows.
         min_assigned (int): Minimum expected number of assigned taxa.
+
+    Returns:
+        bool: True if validation passed.
     """
     yaml_file_name = os.path.basename(yaml_path)
     local_yaml_path = os.path.join(work_dir, yaml_file_name)
-    (status, validation_report, taxonomy_report) = validate_yaml_file(local_yaml_path, taxdump_path)
+    (status, validation_report, taxonomy_report) = validate_yaml_file(
+        local_yaml_path, taxdump_path, min_valid, min_assigned
+    )
 
     if status:
         check_min_counts(validation_report, taxonomy_report, min_valid, min_assigned)
 
     if s3_path is not None:
-        transfer_validated(local_yaml_path, s3_path)
+        transfer_validated(local_yaml_path, work_dir, s3_path)
 
     emit_event(
         event="validate.file.pair.finished",
@@ -171,17 +177,6 @@ def validate_file_pair(
 
 if __name__ == "__main__":
     """Run the flow."""
-    args = parse_args(
-        [
-            required(YAML_PATH),
-            WORK_DIR,
-            default(S3_PATH, None),
-            TAXDUMP_PATH,
-            MIN_VALID,
-            MIN_ASSIGNED,
-        ],
-        "Validate a YAML/TSV file pair.",
-    )
-
+    args = parse_args("Validate a YAML/TSV file pair.")
     validate_file_pair(**vars(args))
     validate_file_pair(**vars(args))

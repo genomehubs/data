@@ -1,9 +1,8 @@
 from enum import Enum
 
-from shared_args import WORK_DIR, YAML_PATH, parse_args, required
-from utils import enum_action
-
 from flows.feature_parsers.register import register_plugins  # noqa: E402
+from flows.lib.shared_args import WORK_DIR, YAML_PATH, parse_args, required
+from flows.lib.utils import enum_action
 
 PARSERS = register_plugins()
 

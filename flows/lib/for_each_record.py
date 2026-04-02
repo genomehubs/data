@@ -1,15 +1,7 @@
 from typing import Generator
 
-from conditional_import import flow
-from shared_args import (
-    ID_COLUMN,
-    INPUT_PATH,
-    S3_PATH,
-    WORK_DIR,
-    multi,
-    parse_args,
-    required,
-)
+from flows.lib.conditional_import import flow
+from flows.lib.shared_args import ID_COLUMN, INPUT_PATH, S3_PATH, WORK_DIR, multi, parse_args, required
 
 
 def iterate_records(input_path: str, id_column: str) -> Generator[dict, None, None]:
@@ -30,9 +22,7 @@ def iterate_records(input_path: str, id_column: str) -> Generator[dict, None, No
 
 
 @flow()
-def for_each_record(
-    input_path: str, id_column: str, work_dir: str, s3_path: list
-) -> None:
+def for_each_record(input_path: str, id_column: str, work_dir: str, s3_path: list) -> None:
     for record in iterate_records(input_path, id_column):
         print(record[id_column])
 

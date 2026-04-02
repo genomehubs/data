@@ -1,7 +1,7 @@
 import os
 
-from conditional_import import NO_CACHE, task
-from utils import Config
+from flows.lib.conditional_import import NO_CACHE, task
+from flows.lib.utils import Config
 
 
 @task(cache_policy=NO_CACHE)

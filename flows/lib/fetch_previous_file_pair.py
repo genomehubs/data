@@ -3,11 +3,12 @@ import os
 import shutil
 
 import boto3
-import utils
-from conditional_import import NO_CACHE, emit_event, flow, task
-from shared_args import S3_PATH, WORK_DIR, YAML_PATH, parse_args, required
-from shared_tasks import get_filenames
-from utils import Config
+
+from flows.lib import utils
+from flows.lib.conditional_import import NO_CACHE, emit_event, flow, task
+from flows.lib.shared_args import S3_PATH, WORK_DIR, YAML_PATH, parse_args, required
+from flows.lib.shared_tasks import get_filenames
+from flows.lib.utils import Config
 
 
 @task(retries=2, retry_delay_seconds=2)
@@ -50,9 +51,7 @@ def fetch_tsv_file(remote_file: str, local_file: str) -> int:
     # if so make sure a local subdir exists and move the file there
     filename = os.path.basename(local_file)
     for subdir in subdirs:
-        subdir_remote_file = os.path.join(
-            os.path.dirname(remote_file), subdir, filename
-        )
+        subdir_remote_file = os.path.join(os.path.dirname(remote_file), subdir, filename)
         print(f"Checking for {subdir_remote_file}")
         bucket_name, key = subdir_remote_file.replace("s3://", "").split("/", 1)
         try:
@@ -152,4 +151,5 @@ if __name__ == "__main__":
         "Fetch previous YAML/TSV files.",
     )
 
+    fetch_previous_file_pair(**vars(args))
     fetch_previous_file_pair(**vars(args))
