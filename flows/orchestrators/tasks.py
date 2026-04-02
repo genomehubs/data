@@ -138,17 +138,16 @@ def run_docker_flow(
         cmd.extend(["-v", f"{s3cfg_path}:/tmp/.s3cfg:ro", "-e", "HOME=/tmp"])
         logger.info(f"Mounting .s3cfg: {s3cfg_path} → /tmp/.s3cfg (read-only), HOME=/tmp")
 
-    # Use module invocation (-m) to ensure proper Python path setup, matching the user's working command:
-    # SKIP_PREFECT=true python -m flows.updaters.update_tol_genome_notes -o <output_path>
-    # We need to:
-    # 1. Set working directory to /app (where the flows module is)
-    # 2. Use "python -m flows.updaters.update_tol_genome_notes" to invoke as a module
+    # Use module invocation (-m) to ensure proper Python path setup
+    # Convert flow_script path to module path: flows/updaters/update_tol_genome_notes.py → flows.updaters.update_tol_genome_notes
+    module_path = flow_script.replace("/", ".").replace(".py", "")
+
     cmd.extend(
         [
             docker_image,
             "bash",
             "-c",
-            f"cd {work_dir} && python -m flows.updaters.update_tol_genome_notes --output_path {output_path}",
+            f"cd {work_dir} && python -m {module_path} --output_path {output_path}",
         ]
     )
 
