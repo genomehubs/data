@@ -6,15 +6,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from flows.lib.conditional_import import emit_event, flow, task
-from flows.lib.shared_args import (
-    DATA_FREEZE_PATH,
-    OUTPUT_PATH,
-    ROOT_TAXID,
-    S3_PATH,
-    default,
-    parse_args,
-    required,
-)
+from flows.lib.shared_args import DATA_FREEZE_PATH, OUTPUT_PATH, ROOT_TAXID, S3_PATH, default, parse_args, required
 from flows.lib.utils import parse_s3_file, run_quoted
 
 
@@ -59,15 +51,9 @@ def fetch_by_root_id(root_taxid, file_path):
         ]
         result = run_quoted(command, capture_output=True, text=True)
         if result.returncode != 0:
-            if (
-                "V2reportsRankType" in result.stderr
-                or "no genome data" in result.stderr
-            ):
+            if "V2reportsRankType" in result.stderr or "no genome data" in result.stderr:
                 # Handle the specific error message
-                print(
-                    f"Warning: {result.stderr.strip()}. "
-                    f"Skipping taxid {taxid} and continuing."
-                )
+                print(f"Warning: {result.stderr.strip()}. " f"Skipping taxid {taxid} and continuing.")
                 continue
             # Raise an error if the command fails
             raise RuntimeError(f"Error fetching datasets summary: {result.stderr}")
@@ -107,24 +93,17 @@ def fetch_data_freeze_accessions(data_freeze_path, file_path):
             result = run_quoted(command, capture_output=True, text=True)
             if result.returncode != 0:
                 if "no genome data" in result.stderr:
-                    print(
-                        f"Warning: {result.stderr.strip()}. "
-                        f"Skipping batch {batch} and continuing."
-                    )
+                    print(f"Warning: {result.stderr.strip()}. " f"Skipping batch {batch} and continuing.")
                     continue
                 raise RuntimeError(f"Error fetching datasets summary: {result.stderr}")
 
             try:
-                print(
-                    f"Writing datasets summary for batch {batch} to file: {file_path}"
-                )
+                print(f"Writing datasets summary for batch {batch} to file: {file_path}")
                 for line in result.stdout.splitlines():
                     f.write(line + "\n")
                     line_count += 1
             except Exception as e:
-                raise RuntimeError(
-                    f"Error writing datasets summary to file: {e}"
-                ) from e
+                raise RuntimeError(f"Error writing datasets summary to file: {e}") from e
     return line_count
 
 
@@ -163,9 +142,7 @@ def fetch_ncbi_datasets_summary(
 
     # Check if the file has at least min_lines lines
     if line_count < min_lines:
-        raise RuntimeError(
-            f"File {file_path} has less than {min_lines} lines: {line_count}"
-        )
+        raise RuntimeError(f"File {file_path} has less than {min_lines} lines: {line_count}")
 
     # Return the number of lines written to the file
     return line_count
@@ -227,10 +204,8 @@ def update_ncbi_datasets(
     output_path: str,
     s3_path: str,
     data_freeze_path: Optional[str] = None,
-) -> None:
-    line_count = fetch_ncbi_datasets_summary(
-        root_taxid, file_path=output_path, data_freeze_path=data_freeze_path
-    )
+) -> bool:
+    line_count = fetch_ncbi_datasets_summary(root_taxid, file_path=output_path, data_freeze_path=data_freeze_path)
     if s3_path:
         status = compare_datasets_summary(output_path, s3_path)
         emit_event(

@@ -9,11 +9,10 @@ from flows.lib.utils import is_local_file_current_http, is_safe_path, run_quoted
 def fetch_tolid_prefixes(
     local_path: str,
     http_path: str = (
-        "https://gitlab.com/wtsi-grit/darwin-tree-of-life-sample-naming/"
-        "-/raw/master/tolids.txt?ref_type=heads"
+        "https://gitlab.com/wtsi-grit/darwin-tree-of-life-sample-naming/" "-/raw/master/tolids.txt?ref_type=heads"
     ),
     min_lines: int = 400000,
-) -> bool:
+) -> tuple[bool, int]:
     """
     Fetch the ToLID prefix file and filter by root taxon if specified.
 
@@ -22,7 +21,7 @@ def fetch_tolid_prefixes(
         local_path (str): Path to save the ToLID prefix file.
 
     Returns:
-        bool: True if the fetched file matches the remote version, False otherwise.
+        tuple[bool, int]: True if the fetched file matches the remote version, False otherwise, and the line count.
     """
 
     if not is_safe_path(local_path):
@@ -34,7 +33,7 @@ def fetch_tolid_prefixes(
     os.makedirs(local_path, exist_ok=True)
     local_file = f"{local_path}/tolids.txt"
     # Fetch the remote file
-    cmd = ["curl", "-sSL", http_path, "-o", local_file]
+    cmd = ["curl", "-sSL", f'"{http_path}"', "-o", local_file]
     print(f"Running command: {' '.join(cmd)}")
     run_quoted(cmd, check=True)
 
@@ -64,15 +63,14 @@ def tolid_file_is_up_to_date(local_path: str, http_path: str) -> bool:
 
 
 @flow()
-def update_tolid_prefixes(output_path: str) -> None:
+def update_tolid_prefixes(output_path: str) -> bool:
     """Fetch the ToLID prefixes file.
 
     Args:
         output_path (str): Path to save the taxonomy dump.
     """
     http_path = (
-        "https://gitlab.com/wtsi-grit/darwin-tree-of-life-sample-naming/"
-        "-/raw/master/tolids.txt?ref_type=heads"
+        "https://gitlab.com/wtsi-grit/darwin-tree-of-life-sample-naming/" "-/raw/master/tolids.txt?ref_type=heads"
     )
     status = None
     complete = False
@@ -84,9 +82,7 @@ def update_tolid_prefixes(output_path: str) -> None:
             line_count = sum(1 for _ in f)
     else:
         status = False
-        complete, line_count = fetch_tolid_prefixes(
-            local_path=output_path, http_path=http_path
-        )
+        complete, line_count = fetch_tolid_prefixes(local_path=output_path, http_path=http_path)
     print(f"TolID file matches previous: {status}")
 
     if complete:
