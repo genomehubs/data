@@ -1,12 +1,12 @@
-"""Targeted backfill for assembly versions missing from historical records.
+"""Fetch assembly versions missing from historical records.
 
-Run this when the incremental updater reports assemblies whose previous
+Run this when parse_assembly_versions reports assemblies whose previous
 version was absent from the previous parsed TSV.  Fetches only the specified
-missing versions from NCBI, parses them, and merges the result into the
+missing versions from NCBI FTP, parses them, and merges the result into the
 existing assembly_historical.tsv.
 
 Usage:
-    python -m flows.parsers.backfill_missing_versions \\
+    python -m flows.updaters.update_assembly_versions \\
         --missing_json tmp/missing_versions.json \\
         --yaml_path configs/assembly_historical.types.yaml \\
         --work_dir tmp
@@ -19,11 +19,10 @@ from pathlib import Path
 from typing import Optional
 
 from flows.lib import utils
-from flows.lib.conditional_import import flow
+from flows.lib.conditional_import import emit_event, flow
 from flows.lib.shared_args import WORK_DIR, YAML_PATH
 from flows.lib.shared_args import parse_args as _parse_args
 from flows.lib.shared_args import required
-from flows.lib.utils import Parser
 from flows.parsers.parse_backfill_historical_versions import (
     find_all_assembly_versions,
     parse_historical_version,
@@ -35,7 +34,7 @@ from flows.parsers.parse_ncbi_assemblies import write_to_tsv
 MISSING_JSON = {
     "flags": ["-m", "--missing_json"],
     "keys": {
-        "help": "Path to the missing_versions.json produced by the incremental updater.",
+        "help": "Path to the missing_versions.json produced by parse_assembly_versions.",
         "type": str,
     },
 }
@@ -44,8 +43,8 @@ MISSING_JSON = {
 def load_missing_versions(missing_json: str) -> list[dict]:
     """Load the list of missing versions from a JSON file.
 
-    The file is written by run_incremental_historical_update when it
-    encounters assemblies with no matching previous version in the parsed TSV.
+    The file is written by parse_assembly_versions when it encounters
+    assemblies with no matching previous version in the parsed TSV.
 
     Args:
         missing_json (str): Path to missing_versions.json.
@@ -81,7 +80,7 @@ def load_existing_historical(historical_tsv: str) -> dict[str, dict]:
 
 
 @flow(log_prints=True)
-def backfill_missing_versions(
+def update_assembly_versions(
     missing_json: str,
     yaml_path: str,
     work_dir: str = ".",
@@ -91,11 +90,10 @@ def backfill_missing_versions(
     For each entry in missing_json, discovers all versions of that assembly
     via NCBI FTP, fetches metadata for the specific missing version, parses it
     through the standard GenomeHubs pipeline, and merges the result into the
-    existing assembly_historical.tsv.
+    existing assembly_historical.tsv.  Emits a completion event on finish.
 
     Args:
-        missing_json (str): Path to missing_versions.json from the incremental
-            updater.
+        missing_json (str): Path to missing_versions.json from parse_assembly_versions.
         yaml_path (str): Path to assembly_historical.types.yaml.
         work_dir (str): Working directory for caches and output.
     """
@@ -105,6 +103,14 @@ def backfill_missing_versions(
     missing = load_missing_versions(missing_json)
     if not missing:
         print("No missing versions to backfill.")
+        emit_event(
+            event="update.assembly_versions.completed",
+            resource={
+                "prefect.resource.id": f"update.assembly_versions.{work_dir}",
+                "prefect.resource.type": "assembly.versions",
+            },
+            payload={"succeeded": 0, "failed": 0, "status": "no_op"},
+        )
         return
 
     historical_tsv = config.meta["file_name"]
@@ -117,7 +123,7 @@ def backfill_missing_versions(
 
     separator = "=" * 80
     print(f"\n{separator}")
-    print("MISSING VERSION BACKFILL")
+    print("ASSEMBLY VERSION UPDATE")
     print(f"{separator}")
     print(f"  Missing entries to process: {total}")
     print(f"  Merging into: {historical_tsv}")
@@ -170,7 +176,7 @@ def backfill_missing_versions(
         write_to_tsv(parsed, config)
 
     print(f"\n{separator}")
-    print("MISSING VERSION BACKFILL COMPLETE")
+    print("ASSEMBLY VERSION UPDATE COMPLETE")
     print(f"{separator}")
     print(f"  Succeeded: {succeeded}/{total}")
     if failed > 0:
@@ -178,54 +184,22 @@ def backfill_missing_versions(
     print(f"  Total records in {historical_tsv}: {len(parsed)}")
     print(f"{separator}\n")
 
-
-def backfill_missing_versions_wrapper(
-    working_yaml: str,
-    work_dir: str,
-    append: bool,
-    data_freeze_path: Optional[str] = None,
-    **kwargs,
-) -> None:
-    """Wrapper matching the fetch_parse_validate parser signature.
-
-    Locates missing_versions.json in work_dir and delegates to
-    backfill_missing_versions.
-
-    Args:
-        working_yaml (str): Path to the working YAML file.
-        work_dir (str): Path to the working directory containing
-            missing_versions.json.
-        append (bool): Unused; accepted for pipeline compatibility.
-        data_freeze_path (str, optional): Unused; accepted for pipeline
-            compatibility.
-        **kwargs: Additional keyword arguments passed by the pipeline.
-    """
-    missing_json_path = os.path.join(work_dir, "missing_versions.json")
-    if not Path(missing_json_path).exists():
-        raise FileNotFoundError(f"No missing_versions.json found in {work_dir}")
-
-    backfill_missing_versions(
-        missing_json=missing_json_path,
-        yaml_path=working_yaml,
-        work_dir=work_dir,
-    )
-
-
-def plugin() -> Parser:
-    """Register the flow."""
-    return Parser(
-        name="BACKFILL_MISSING_VERSIONS",
-        func=backfill_missing_versions_wrapper,
-        description="Targeted backfill for assembly versions missing from historical records.",
+    emit_event(
+        event="update.assembly_versions.completed",
+        resource={
+            "prefect.resource.id": f"update.assembly_versions.{work_dir}",
+            "prefect.resource.type": "assembly.versions",
+        },
+        payload={"succeeded": succeeded, "failed": failed, "status": "success"},
     )
 
 
 if __name__ == "__main__":
     args = _parse_args(
         [required(MISSING_JSON), required(YAML_PATH), WORK_DIR],
-        description="Targeted backfill for assembly versions missing from historical records",
+        description="Fetch assembly versions missing from historical records",
     )
-    backfill_missing_versions(
+    update_assembly_versions(
         missing_json=args.missing_json,
         yaml_path=args.yaml_path,
         work_dir=args.work_dir,

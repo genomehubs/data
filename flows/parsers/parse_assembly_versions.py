@@ -1,9 +1,11 @@
 """Daily incremental updates to historical assembly records.
 
-Identifies assembly versions newly superseded since the last run and appends them to assembly_historical.tsv.  No NCBI fetches are required — data is copied directly from the previous assembly_current.tsv parse output.
+Identifies assembly versions newly superseded since the last run and appends
+them to assembly_historical.tsv.  No NCBI fetches are required — data is
+copied directly from the previous assembly_current.tsv parse output.
 
 Usage:
-    python -m flows.parsers.update_historical_incremental \\
+    python -m flows.parsers.parse_assembly_versions \\
         --input_path assembly_data_report.jsonl \\
         --previous_tsv assembly_current.tsv.previous \\
         --historical_tsv outputs/assembly_historical.tsv
@@ -264,11 +266,11 @@ def print_missing_versions_warning(missing: list[dict]) -> None:
     if len(missing) > 5:
         print(f"    ... and {len(missing) - 5} more")
     print("\n  To backfill missing versions, run:")
-    print("    python -m flows.parsers.backfill_missing_versions")
+    print("    python -m flows.updaters.update_assembly_versions")
 
 
 @flow(log_prints=True)
-def run_incremental_historical_update(
+def parse_assembly_versions(
     new_jsonl: str,
     previous_tsv: str,
     historical_tsv: str,
@@ -289,7 +291,7 @@ def run_incremental_historical_update(
     """
     separator = "=" * 80
     print(f"\n{separator}")
-    print("INCREMENTAL HISTORICAL UPDATE")
+    print("ASSEMBLY VERSION PARSE")
     print(f"{separator}\n")
 
     print("[1/3] Loading previous parsed results...")
@@ -314,7 +316,7 @@ def run_incremental_historical_update(
 
     print(f"\n{separator}")
     print(
-        f"INCREMENTAL UPDATE COMPLETE  "
+        f"ASSEMBLY VERSION PARSE COMPLETE  "
         f"Superseded: {len(newly_superseded)}  "
         f"Missing: {len(missing)}"
     )
@@ -327,7 +329,7 @@ def run_incremental_historical_update(
     }
 
 
-def incremental_update_wrapper(
+def parse_assembly_versions_wrapper(
     working_yaml: str,
     work_dir: str,
     append: bool,
@@ -337,7 +339,7 @@ def incremental_update_wrapper(
     """Wrapper matching the fetch_parse_validate parser signature.
 
     Derives the previous TSV and historical TSV paths from work_dir and
-    delegates to run_incremental_historical_update.
+    delegates to parse_assembly_versions.
 
     Args:
         working_yaml (str): Path to the working YAML file (unused; accepted
@@ -356,7 +358,7 @@ def incremental_update_wrapper(
     if len(paths) > 1:
         raise ValueError(f"More than one jsonl file found in {work_dir}")
 
-    results = run_incremental_historical_update(
+    results = parse_assembly_versions(
         new_jsonl=paths[0],
         previous_tsv=os.path.join(work_dir, "assembly_current.tsv.previous"),
         historical_tsv=os.path.join(work_dir, "assembly_historical.tsv"),
@@ -372,8 +374,8 @@ def incremental_update_wrapper(
 def plugin() -> Parser:
     """Register the flow."""
     return Parser(
-        name="UPDATE_HISTORICAL_INCREMENTAL",
-        func=incremental_update_wrapper,
+        name="PARSE_ASSEMBLY_VERSIONS",
+        func=parse_assembly_versions_wrapper,
         description="Daily incremental update of historical assembly records.",
     )
 
@@ -383,7 +385,7 @@ if __name__ == "__main__":
         [required(INPUT_PATH), required(PREVIOUS_TSV), required(HISTORICAL_TSV)],
         description="Daily incremental update of historical assembly records",
     )
-    results = run_incremental_historical_update(
+    results = parse_assembly_versions(
         new_jsonl=args.input_path,
         previous_tsv=args.previous_tsv,
         historical_tsv=args.historical_tsv,
@@ -398,4 +400,4 @@ if __name__ == "__main__":
             f"  Action needed: {results['missing_versions_count']} missing versions."
         )
         print(f"  Written to: {missing_json_path}")
-        print("  Run: python -m flows.parsers.backfill_missing_versions")
+        print("  Run: python -m flows.updaters.update_assembly_versions")

@@ -1,13 +1,13 @@
-"""Tests for update_historical_incremental.py and backfill_missing_versions.py
+"""Tests for parse_assembly_versions.py and update_assembly_versions.py
 
 Covers:
 - Loading and indexing previous parsed TSV results
 - Building superseded and missing-version records
 - Core supersession detection logic (superseded, missing-with-gap, new-series, v1-skip)
 - Appending to historical TSV with deduplication
-- Incremental orchestrator flow behaviour
-- Loading existing historical TSV (backfill helper)
-- Backfill flow: version selection and TSV merge
+- Parser orchestrator flow behaviour
+- Loading existing historical TSV (updater helper)
+- Updater flow: version selection and TSV merge
 """
 
 import csv
@@ -23,23 +23,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 os.environ["SKIP_PREFECT"] = "true"
 
-from flows.parsers import (  # noqa: E402
-    backfill_missing_versions as backfill_module,
-    update_historical_incremental as incremental_module,
-)
 from flows.lib.utils import Parser  # noqa: E402
-from flows.parsers.backfill_missing_versions import (  # noqa: E402
-    backfill_missing_versions,
-    backfill_missing_versions_wrapper,
-    load_existing_historical,
-)
-from flows.parsers.update_historical_incremental import (  # noqa: E402
+from flows.parsers import parse_assembly_versions as incremental_module  # noqa: E402
+from flows.parsers.parse_assembly_versions import (  # noqa: E402
     append_superseded_to_tsv,
     build_missing_version_record,
     build_superseded_row,
     identify_newly_superseded,
     load_previous_parsed_by_base,
-    run_incremental_historical_update,
+    parse_assembly_versions,
+)
+from flows.updaters import update_assembly_versions as backfill_module  # noqa: E402
+from flows.updaters.update_assembly_versions import (  # noqa: E402
+    load_existing_historical,
+    update_assembly_versions,
 )
 
 
@@ -296,12 +293,12 @@ class TestAppendSupersededToTsv:
 # ---------------------------------------------------------------------------
 
 class TestIncrementalOrchestrator:
-    """run_incremental_historical_update orchestrator behaviour."""
+    """parse_assembly_versions orchestrator behaviour."""
 
     def test_no_previous_tsv_returns_empty_result(self, tmp_path):
         jsonl = tmp_path / "new.jsonl"
         write_jsonl(jsonl, [{"accession": "GCA_000222935.2"}])
-        result = run_incremental_historical_update(
+        result = parse_assembly_versions(
             new_jsonl=str(jsonl),
             previous_tsv=str(tmp_path / "nope.tsv"),
             historical_tsv=str(tmp_path / "historical.tsv"),
@@ -319,7 +316,7 @@ class TestIncrementalOrchestrator:
         write_jsonl(jsonl, [
             {"accession": "GCA_000222935.2", "releaseDate": "2024-01-15"}
         ])
-        result = run_incremental_historical_update(
+        result = parse_assembly_versions(
             new_jsonl=str(jsonl),
             previous_tsv=str(previous_tsv),
             historical_tsv=str(tmp_path / "historical.tsv"),
@@ -337,7 +334,7 @@ class TestIncrementalOrchestrator:
         write_jsonl(jsonl, [
             {"accession": "GCA_000222935.3", "releaseDate": "2024-06-01"}
         ])
-        result = run_incremental_historical_update(
+        result = parse_assembly_versions(
             new_jsonl=str(jsonl),
             previous_tsv=str(previous_tsv),
             historical_tsv=str(tmp_path / "historical.tsv"),
@@ -356,7 +353,7 @@ class TestIncrementalOrchestrator:
             {"accession": "GCA_000222935.2", "releaseDate": "2024-01-15"}
         ])
         historical_tsv = tmp_path / "historical.tsv"
-        run_incremental_historical_update(
+        parse_assembly_versions(
             new_jsonl=str(jsonl),
             previous_tsv=str(previous_tsv),
             historical_tsv=str(historical_tsv),
@@ -403,7 +400,7 @@ class TestLoadExistingHistorical:
 # ---------------------------------------------------------------------------
 
 class TestBackfillMissingVersionsFlow:
-    """backfill_missing_versions selects the right version and merges into TSV."""
+    """update_assembly_versions selects the right version and merges into TSV."""
 
     def _write_missing_json(self, tmp_path, entries):
         path = tmp_path / "missing.json"
@@ -435,7 +432,7 @@ class TestBackfillMissingVersionsFlow:
                 "new_accession": "GCA_000222935.2",
             }
         ])
-        backfill_missing_versions(
+        update_assembly_versions(
             missing_json=missing_json,
             yaml_path=str(tmp_path / "config.yaml"),
             work_dir=str(tmp_path),
@@ -469,7 +466,7 @@ class TestBackfillMissingVersionsFlow:
                 "new_accession": "GCA_000222935.2",
             }
         ])
-        backfill_missing_versions(
+        update_assembly_versions(
             missing_json=missing_json,
             yaml_path=str(tmp_path / "config.yaml"),
             work_dir=str(tmp_path),
@@ -498,7 +495,7 @@ class TestBackfillMissingVersionsFlow:
                 "new_accession": "GCA_000222935.2",
             }
         ])
-        backfill_missing_versions(
+        update_assembly_versions(
             missing_json=missing_json,
             yaml_path=str(tmp_path / "config.yaml"),
             work_dir=str(tmp_path),
@@ -525,7 +522,7 @@ class TestBackfillMissingVersionsFlow:
                 "new_accession": "GCA_000222935.2",
             }
         ])
-        backfill_missing_versions(
+        update_assembly_versions(
             missing_json=missing_json,
             yaml_path=str(tmp_path / "config.yaml"),
             work_dir=str(tmp_path),
@@ -565,7 +562,7 @@ class TestBackfillMissingVersionsFlow:
                 "new_accession": "GCA_000412225.2",
             },
         ])
-        backfill_missing_versions(
+        update_assembly_versions(
             missing_json=missing_json,
             yaml_path=str(tmp_path / "config.yaml"),
             work_dir=str(tmp_path),
@@ -586,7 +583,7 @@ class TestBackfillMissingVersionsFlow:
             meta={"file_name": str(tmp_path / "historical.tsv")}
         )
         missing_json = self._write_missing_json(tmp_path, [])
-        backfill_missing_versions(
+        update_assembly_versions(
             missing_json=missing_json,
             yaml_path=str(tmp_path / "config.yaml"),
             work_dir=str(tmp_path),
@@ -596,49 +593,14 @@ class TestBackfillMissingVersionsFlow:
 
 
 # ---------------------------------------------------------------------------
-# TestBackfillMissingVersionsWrapper
+# TestParseAssemblyVersionsPlugin
 # ---------------------------------------------------------------------------
 
-class TestBackfillMissingVersionsWrapper:
-    """backfill_missing_versions_wrapper delegates to the flow correctly."""
-
-    @patch.object(backfill_module, "backfill_missing_versions")
-    def test_delegates_to_flow(self, mock_flow, tmp_path):
-        """Wrapper locates missing_versions.json and passes it to the flow."""
-        missing_json = tmp_path / "missing_versions.json"
-        missing_json.write_text("[]", encoding="utf-8")
-
-        backfill_missing_versions_wrapper(
-            working_yaml=str(tmp_path / "config.yaml"),
-            work_dir=str(tmp_path),
-            append=False,
-        )
-
-        mock_flow.assert_called_once_with(
-            missing_json=str(missing_json),
-            yaml_path=str(tmp_path / "config.yaml"),
-            work_dir=str(tmp_path),
-        )
-
-    def test_raises_when_missing_json_absent(self, tmp_path):
-        """Wrapper raises FileNotFoundError if missing_versions.json does not exist."""
-        with pytest.raises(FileNotFoundError):
-            backfill_missing_versions_wrapper(
-                working_yaml=str(tmp_path / "config.yaml"),
-                work_dir=str(tmp_path),
-                append=False,
-            )
-
-
-# ---------------------------------------------------------------------------
-# TestBackfillMissingVersionsPlugin
-# ---------------------------------------------------------------------------
-
-class TestBackfillMissingVersionsPlugin:
+class TestParseAssemblyVersionsPlugin:
     """plugin() returns a correctly configured Parser."""
 
     def test_plugin_returns_parser(self):
-        result = backfill_module.plugin()
+        result = incremental_module.plugin()
         assert isinstance(result, Parser)
-        assert result.name == "BACKFILL_MISSING_VERSIONS"
-        assert result.func is backfill_missing_versions_wrapper
+        assert result.name == "PARSE_ASSEMBLY_VERSIONS"
+        assert result.func is incremental_module.parse_assembly_versions_wrapper
