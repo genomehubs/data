@@ -18,6 +18,8 @@ from typing import Dict, List, Optional
 import boto3
 import requests
 from botocore.exceptions import ClientError
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from dateutil import parser
 from genomehubs import utils as gh_utils
 
@@ -550,13 +552,56 @@ def enum_action(enum_class):
     return EnumAction
 
 
+def _build_session(retries=3, backoff_factor=1.0, status_forcelist=None):
+    """Build a requests Session with transport-level retry logic.
+
+    Args:
+        retries (int): Total number of retries per request.
+        backoff_factor (float): Backoff factor for exponential delay between retries.
+        status_forcelist (list): HTTP status codes to trigger a retry.
+
+    Returns:
+        requests.Session: Configured session with retry adapter.
+    """
+    if status_forcelist is None:
+        status_forcelist = [429, 500, 502, 503, 504]
+    retry = Retry(
+        total=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+        allowed_methods=["GET", "POST", "HEAD"],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session = requests.Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
 def safe_get(*args, method="GET", timeout=300, **kwargs):
+    """Make an HTTP request with transport-level retries.
+
+    Retries automatically on 429/5xx status codes and connection errors
+    with exponential backoff (1s, 2s, 4s). Separate from Prefect task-level
+    retries which re-run the entire task.
+
+    Args:
+        *args: Positional arguments passed to requests (typically the URL).
+        method (str): HTTP method — "GET", "POST", or "HEAD".
+        timeout (int): Request timeout in seconds.
+        **kwargs: Additional keyword arguments passed to requests.
+
+    Returns:
+        requests.Response: The HTTP response object.
+    """
+    session = _build_session()
     if method == "GET":
-        return requests.get(*args, timeout=timeout, **kwargs)
+        return session.get(*args, timeout=timeout, **kwargs)
     elif method == "POST":
-        return requests.post(*args, timeout=timeout, **kwargs)
+        return session.post(*args, timeout=timeout, **kwargs)
     elif method == "HEAD":
-        return requests.head(*args, timeout=timeout, **kwargs)
+        return session.head(*args, timeout=timeout, **kwargs)
 
 
 def find_http_file(http_path: str, filename: str) -> str:

@@ -264,3 +264,142 @@ deployments:
     schedules:
       - *daily
     work_pool: *goat_data_work_pool
+
+  # -----------------------------------------------------------------------
+  # Phase 1 updaters — external data fetching (migrated from goat-data)
+  # -----------------------------------------------------------------------
+
+  - name: update-vgp-status
+    # Fetch VGP status list from GitHub YAML tracker
+    entrypoint: flows/updaters/update_vgp_status.py:update_vgp_status
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/status-lists/vgp_status.tsv"
+      s3_path: s3://goat/resources/status-lists/vgp_status.tsv
+      min_records: 100
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-main
+    # Fetch species metadata from Ensembl main site
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_metadata.tsv.gz"
+      division: ensembl
+      s3_path: s3://goat/resources/assembly-data/ensembl_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-metazoa
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_metazoa_metadata.tsv.gz"
+      division: metazoa
+      s3_path: s3://goat/resources/assembly-data/ensembl_metazoa_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-plants
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_plants_metadata.tsv.gz"
+      division: plants
+      s3_path: s3://goat/resources/assembly-data/ensembl_plants_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-fungi
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_fungi_metadata.tsv.gz"
+      division: fungi
+      s3_path: s3://goat/resources/assembly-data/ensembl_fungi_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-protists
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_protists_metadata.tsv.gz"
+      division: protists
+      s3_path: s3://goat/resources/assembly-data/ensembl_protists_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-rapid
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_rapid_metadata.tsv.gz"
+      division: rapid
+      s3_path: s3://goat/resources/assembly-data/ensembl_rapid_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ucsc-assemblies
+    # Fetch UCSC assembly hub accession list
+    entrypoint: flows/updaters/update_ucsc_assemblies.py:update_ucsc_assemblies
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ucsc_assemblies.tsv"
+      s3_path: s3://goat/resources/assembly-data/ucsc_assemblies.tsv
+      min_records: 100
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-jgi-status
+    # Fetch JGI 1KFG project data via OAuth API
+    entrypoint: flows/updaters/update_jgi_status.py:update_jgi_status
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/jgi_1kfg_status.tsv"
+      s3_path: s3://goat/resources/assembly-data/jgi_1kfg_status.tsv
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-sra-data
+    # Fetch SRA data via NCBI E-utilities
+    entrypoint: flows/updaters/update_sra_data.py:update_sra_data
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/sra_data.tsv.gz"
+      s3_path: s3://goat/resources/assembly-data/sra_data.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-blobtoolkit
+    # Fetch BlobToolKit analysis data via API
+    entrypoint: flows/updaters/update_blobtoolkit.py:update_blobtoolkit
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/btk.tsv.gz"
+      files_output_path: "/home/ubuntu/tmp/test/assembly-data/btk.files.yaml"
+      s3_path: s3://goat/resources/assembly-data/btk.tsv.gz
+      s3_files_path: s3://goat/resources/assembly-data/btk.files.yaml
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-refseq-organelles
+    # Fetch and parse RefSeq organelle data from NCBI FTP
+    entrypoint: flows/updaters/update_refseq_organelles.py:update_refseq_organelles
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/refseq_organelles.tsv.gz"
+      s3_path: s3://goat/resources/assembly-data/refseq_organelles.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-google-sheets-status
+    # Fetch project status data from Google Sheets
+    entrypoint: flows/updaters/update_google_sheets_status.py:update_google_sheets_status
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/status-lists/google-sheets"
+      s3_path: s3://goat/resources/status-lists/google-sheets/
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
