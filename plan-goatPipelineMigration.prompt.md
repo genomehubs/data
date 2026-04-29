@@ -1,48 +1,62 @@
 # GoaT Data Import Pipeline Migration Plan
 
 ## TL;DR
+
 Migrate all data fetching from the legacy `goat-data` GitHub Actions workflow to scheduled Prefect-backed updaters in the `data` repo, then wire up parsers and validators to produce import-ready TSV/YAML pairs on S3. Five phases: fetch (Phase 1), parse+validate (Phase 2), switch S3 source (Phase 3), replace import (Phase 4), full pipeline (Phase 5).
 
 ---
 
 ## Gap Analysis: Updater Coverage
 
-### Already Implemented (10 updaters)
-| Updater | Legacy Equivalent | Schedule |
-|---------|------------------|----------|
-| `update_ncbi_datasets` | fetch-ncbi-datasets-zip | Daily |
-| `update_ncbi_taxonomy` | taxdump download | Weekly |
-| `update_ena_taxonomy_extra` | ENA taxonomy API | Weekly |
-| `update_genomehubs_taxonomy` | fetch-genomehubs-taxonomy | Daily |
-| `update_tolid_prefixes` | ToLID GitLab fetch | Weekly |
-| `update_ott_taxonomy` | OTT download | Monthly |
-| `update_tol_portal_status` | STS API (replaced) | Daily (orchestrated) |
-| `update_tol_genome_notes` | (new source) | Daily (orchestrated) |
-| `update_nhm_status_list` | NHM Data Portal API | Weekly |
-| `update_boat_config` | GoaT API + Lustre | Daily |
+### Already Implemented (11 updaters)
+
+| Updater                      | Legacy Equivalent                                  | Schedule             | Notes                                              |
+| ---------------------------- | -------------------------------------------------- | -------------------- | -------------------------------------------------- |
+| `update_ncbi_datasets`       | fetch-ncbi-datasets-zip                            | Daily                | NCBI Datasets CLI → JSONL                          |
+| `update_ncbi_taxonomy`       | fetch-ncbi-taxdump (commented out in legacy)       | Weekly               | FTP taxdump with MD5 verification                  |
+| `update_ena_taxonomy_extra`  | fetch-ena-taxonomy-extra (commented out in legacy) | Weekly               | ENA REST API                                       |
+| `update_genomehubs_taxonomy` | fetch-genomehubs-taxonomy                          | Daily                | blobtk collation from NCBI+ENA+OTT                 |
+| `update_tolid_prefixes`      | fetch-tolids (commented out in legacy)             | Weekly               | GitLab WTSI; 400k line minimum validation          |
+| `update_ott_taxonomy`        | (no legacy equivalent)                             | Monthly              | Open Tree of Life .tgz download                    |
+| `update_tol_portal_status`   | STS API (fully replaced via tol-sdk)               | Daily (orchestrated) | Docker-isolated; replaces `STS_AUTHORIZATION_KEY`  |
+| `update_tol_genome_notes`    | (new source — no legacy equivalent)                | Daily (orchestrated) | Docker-isolated; tol-sdk                           |
+| `update_nhm_status_list`     | fetch-from-apis NHM (commented out in legacy)      | Weekly               | POST API with cursor pagination                    |
+| `update_boat_config`         | GoaT API + Lustre                                  | Daily                | Assembly QC config builder                         |
+| `tol_utils` (shared)         | —                                                  | —                    | Shared ToL Portal helper, not a standalone updater |
 
 ### Missing — Need New Updaters (8 categories, ~11 updaters)
 
-| # | Source | Legacy Job | Priority | Schedule | Complexity |
-|---|--------|-----------|----------|----------|------------|
-| 1 | **BlobToolKit** | fetch-blobtoolkit (Docker `genomehubs parse --btk`) | HIGH | Daily | Medium — API pagination + Docker |
-| 2 | **RefSeq Organelles** | fetch-refseq-organelles (FTP + BioPython) | HIGH | Weekly | Medium — FTP + GenBank parsing |
-| 3 | **VGP Status** | fetch-from-apis (GitHub YAML) | MEDIUM | Weekly | Low — simple HTTP + YAML parse |
-| 4 | **JGI 1KFG** | fetch-from-apis (OAuth REST) | MEDIUM | Weekly | Medium — OAuth token exchange |
-| 5 | **Ensembl Metadata** (×6) | fetch-assembly-links (6 JSON endpoints) | MEDIUM | Monthly | Low — HTTP + JSON→TSV, one parameterized updater |
-| 6 | **UCSC Assembly Hubs** | fetch-assembly-links | LOW | Monthly | Low — HTTP + text parsing |
-| 7 | **Google Sheets Status** (~20+ projects) | fetch-from-apis (R + Python) | HIGH | Weekly | High — rewrite R→Python, normalize tables |
-| 8 | **SRA Data** | (parse_sra_data.py) | MEDIUM | Weekly | Medium — NCBI API + XML parsing |
+| #   | Source                                   | Legacy Job                                          | Priority | Schedule | Complexity                                       |
+| --- | ---------------------------------------- | --------------------------------------------------- | -------- | -------- | ------------------------------------------------ |
+| 1   | **BlobToolKit**                          | fetch-blobtoolkit (Docker `genomehubs parse --btk`) | HIGH     | Daily    | Medium — API pagination + Docker                 |
+| 2   | **RefSeq Organelles**                    | fetch-refseq-organelles (FTP + BioPython)           | HIGH     | Weekly   | Medium — FTP + GenBank parsing                   |
+| 3   | **VGP Status**                           | fetch-from-apis (GitHub YAML)                       | MEDIUM   | Weekly   | Low — simple HTTP + YAML parse                   |
+| 4   | **JGI 1KFG**                             | fetch-from-apis (OAuth REST)                        | MEDIUM   | Weekly   | Medium — OAuth token exchange                    |
+| 5   | **Ensembl Metadata** (×6)                | fetch-assembly-links (6 JSON endpoints)             | MEDIUM   | Monthly  | Low — HTTP + JSON→TSV, one parameterized updater |
+| 6   | **UCSC Assembly Hubs**                   | fetch-assembly-links                                | LOW      | Monthly  | Low — HTTP + text parsing                        |
+| 7   | **Google Sheets Status** (~20+ projects) | fetch-from-apis (R + Python)                        | HIGH     | Weekly   | High — rewrite R→Python, normalize tables        |
+| 8   | **SRA Data**                             | (parse_sra_data.py)                                 | MEDIUM   | Weekly   | Medium — NCBI API + XML parsing                  |
+
+### Legacy-Only Binary Fetches (no migration needed)
+
+These legacy jobs fetch tool binaries, not data. They become package dependencies in the data repo:
+
+- **fetch-ncbi-datasets** — downloads `datasets` CLI executable → already a pip dependency (`ncbi-datasets-cli`)
+- **fetch-genomehubs-api** — downloads GenomeHubs API binary → already a pip dependency (`genomehubs`)
+- **fetch-genomehubs-ui** — downloads GenomeHubs UI binary → not needed for data pipeline
 
 ### Static/Semi-Static Sources (no external fetch needed)
+
 These exist as curated YAML/TSV pairs in `goat-data/sources/` and are uploaded directly to S3:
-- **Genomesize/Karyotype** — 25 FILE_ sources (genome size databases, chromosome counts)
+
+- **Genomesize/Karyotype** — 25 FILE\_ sources (genome size databases, chromosome counts)
 - **Conservation** — CITES index (periodically updated manually)
-- **UK Legislation** — 9 FILE_ sources (very static)
-- **Regional Lists** — 7 FILE_ sources (static geographic lists)
+- **UK Legislation** — 9 FILE\_ sources (very static)
+- **Regional Lists** — 7 FILE\_ sources (static geographic lists)
 - **Lineages** — ODB10 lineage mappings
 - **OTT IDs** — OTT taxonomy mappings
-- **ToLIDs** — Tree of Life ID naming
+
+Note: **ToLIDs** are NOT static — the prefix list is actively fetched by `update_tolid_prefixes`. The `tolids.names.yaml` config in `goat-data/sources/tolids/` is a naming convention file that ships with the YAML configs, not a separate data source.
 
 These should be synced to S3 via a simple `sync_static_sources` utility or manually, not via updaters.
 
@@ -51,6 +65,7 @@ These should be synced to S3 via a simple `sync_static_sources` utility or manua
 ## Phase 1: External Data Fetching
 
 ### Goal
+
 All external data fetching implemented as Prefect updaters with scheduled deployments, uploading raw data to S3 and emitting events for downstream parsing.
 
 ### Steps
@@ -58,6 +73,7 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 #### Group A: API-Based Updaters (parallel development)
 
 **Step 1: `update_vgp_status` — VGP Status List**
+
 - Fetch GitHub YAML from `https://raw.githubusercontent.com/vgl-hub/genome-portal/master/_data/table_tracker.yml`
 - Parse YAML, extract fields: common_name, family, order, scientific_name, status, taxon_id, vgp_phase
 - Write TSV to `s3://goat/resources/status-lists/vgp.tsv`
@@ -66,6 +82,7 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 - Reference: `goat-data/scripts/api/api_config.py` VGL handlers
 
 **Step 2: `update_jgi_status` — JGI 1KFG**
+
 - OAuth token exchange: offline_token → access_token via `https://signon.jgi.doe.gov/signon/create`
 - Paginated API: `https://gold-ws.jgi.doe.gov/projects?studyGoldId=Gs0000001`
 - Write TSV to `s3://goat/resources/status-lists/jgi_1kfg.tsv`
@@ -75,6 +92,7 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 - Bug risk: Legacy code has fragile OAuth flow — add proper token refresh and expiry handling
 
 **Step 3: `update_ensembl_metadata` — Ensembl Species Metadata (6 databases)**
+
 - Single parameterized updater deployed 6 times with different division parameters
 - Divisions: Fungi, Metazoa, Plants, Protists, Vertebrates, Rapid Release
 - Fetch JSON from Ensembl REST API endpoints
@@ -84,6 +102,7 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 - Reference: `goat-data/.github/workflows/fetch-resources.yml` fetch-assembly-links job
 
 **Step 4: `update_ucsc_assemblies` — UCSC Genome Browser**
+
 - Fetch assembly hub list from UCSC API
 - Parse to TSV
 - Write to `s3://goat/resources/assembly-data/ucsc_ids.tsv`
@@ -91,6 +110,7 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 - Reuse: `safe_get()`, standard arg parsing
 
 **Step 5: `update_sra_data` — SRA Metadata**
+
 - Fetch from NCBI SRA API (Entrez or BigQuery)
 - Parse XML/JSON responses to TSV
 - Write to `s3://goat/resources/sra/sra.tsv.gz`
@@ -101,6 +121,7 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 #### Group B: Complex Updaters (sequential, more effort)
 
 **Step 6: `update_blobtoolkit` — BlobToolKit Analysis Data**
+
 - Approach A (preferred): Direct API fetch from `https://blobtoolkit.genomehubs.org/api/v1/search/Eukaryota` + per-assembly detail queries
 - Approach B: Docker-isolated `genomehubs parse --btk` via orchestrator pattern (like tol_genome_notes)
 - Outputs: `btk.tsv.gz` + `btk.files.yaml` to `s3://goat/resources/btk/`
@@ -109,6 +130,7 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 - Bug risk: Legacy has `print(plots)` debug line left in (line 66); pagination may miss entries
 
 **Step 7: `update_refseq_organelles` — RefSeq Organelle Data**
+
 - Fetch from NCBI FTP: `ftp.ncbi.nlm.nih.gov/refseq/release/`
 - Parse GenBank flat files for mitochondrion/plastid sequences
 - Extract: accession, taxon_id, organism, sequence_length, references
@@ -118,6 +140,7 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 - Consideration: BioPython dependency may need Docker isolation (check pydantic conflicts)
 
 **Step 8: `update_google_sheets_status` — Google Sheets Project Status Lists**
+
 - Rewrite R script (`get_googlesheets.R`) entirely in Python
 - Fetch TSVs from public Google Sheets URLs (no auth needed for public sheets)
 - Use `import_status_lib.py` patterns for table normalization but rewrite cleanly:
@@ -142,12 +165,14 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 #### Group C: Infrastructure & Static Data
 
 **Step 9: `sync_static_sources` — Static YAML/TSV pairs**
+
 - Utility to upload curated YAML/TSV pairs from goat-data/sources/ to S3
 - Not a scheduled updater — run manually or on goat-data repo changes
 - Covers: genomesize-karyotype, conservation, uk-legislation, regional-lists, lineages
 - Could be triggered by a webhook on goat-data repo pushes
 
 **Step 10: Secrets & Configuration**
+
 - Configure Prefect Secret blocks for: `JGI_OFFLINE_TOKEN`, Google Sheets URLs
 - STS_AUTHORIZATION_KEY no longer needed (replaced by tol-sdk)
 - Add deployment entries to `flows/prefect.yaml` for all new updaters
@@ -155,6 +180,7 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 ### Relevant Files (Phase 1)
 
 **New files to create:**
+
 - `flows/updaters/update_vgp_status.py`
 - `flows/updaters/update_jgi_status.py`
 - `flows/updaters/update_ensembl_metadata.py`
@@ -167,12 +193,14 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 - `flows/lib/api_helpers.py` (shared API helpers: OAuth, pagination, JSON→TSV)
 
 **Existing files to modify:**
+
 - `flows/prefect.yaml` — add deployments for all new updaters
 - `flows/lib/utils.py` — add any missing shared utilities
 - `flows/lib/shared_args.py` — add new argument definitions if needed
 - `requirements.txt` — add BioPython if needed for RefSeq parsing
 
 **Reference files (goat-data, read-only):**
+
 - `goat-data/scripts/api/api_config.py` — API endpoint definitions
 - `goat-data/scripts/api/api_tools.py` — retry/pagination patterns
 - `goat-data/scripts/jgi_to_tsv.py` — JGI OAuth flow
@@ -184,6 +212,7 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 - `goat-data/.github/workflows/fetch-resources.yml` — complete fetch workflow
 
 ### Verification (Phase 1)
+
 1. Each updater runs locally with `SKIP_PREFECT=true` and produces valid output TSV
 2. Output TSV format matches goat-data legacy output (diff comparison where possible)
 3. S3 upload succeeds to `s3://goat/resources/` paths
@@ -193,6 +222,7 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 7. `prefect deploy --prefect-file flows/prefect.yaml --all` succeeds
 
 ### Decisions (Phase 1)
+
 - **Google Sheets**: Rewrite in Python (not R) for consistency with the rest of the codebase
 - **BlobToolKit**: Prefer direct API approach over Docker genomehubs parse (simpler, avoids Docker-in-Docker); fall back to orchestrator pattern if API is insufficient
 - **RefSeq Organelles**: Use BioPython in Docker container if pydantic conflicts arise
@@ -204,52 +234,63 @@ All external data fetching implemented as Prefect updaters with scheduled deploy
 ## Phase 2: YAML-Backed Parsers & Validation
 
 ### Goal
+
 All data sources processed by fetch-parse-validate pipeline. Parsing triggered by update events. Validated TSV/YAML pairs uploaded to new S3 directories (`s3://goat/validated/`).
 
 ### Steps
 
 **Step 1: Implement `parse_sequencing_status` parser**
+
 - Handle all status list TSV formats (VGP, JGI, Google Sheets projects, NHM, ToL Portal)
 - Config-driven: read YAML to determine column mappings
 - Reuse `Config` class from `flows/lib/utils.py`
 - One parser handles all ~65 status list YAML configs
 
 **Step 2: Implement `parse_refseq_organelles` parser**
+
 - Replace stub with working implementation
 - Read YAML config, apply field mappings from `refseq_organelles.types.yaml`
 - Validate organelle accessions, taxonomy
 
 **Step 3: Implement `parse_blobtoolkit` parser**
+
 - Parse BTK TSV using YAML config from `btk.types.yaml`
 - Handle BUSCO stats, base composition, read mapping fields
 
 **Step 4: Implement `parse_ensembl_metadata` parser**
+
 - Handle all 6 Ensembl division TSVs
 - Single generic parser, config-driven via YAML
 
 **Step 5: Implement `parse_sra_data` parser**
+
 - Parse SRA TSV with YAML config from `sra.types.yaml`
 
 **Step 6: Implement `parse_genomesize_karyotype` parser**
-- Handle the 25+ genomesize/karyotype FILE_ sources
+
+- Handle the 25+ genomesize/karyotype FILE\_ sources
 - Generic parser for simple TSV→validated TSV transformation
 
 **Step 7: Implement `parse_conservation` and `parse_legislation` parsers**
+
 - Static data validation parsers
 - Check CITES categories, legislation references against YAML constraints
 
 **Step 8: Wire all fetch-parse-validate deployments**
+
 - Add trigger entries in `prefect.yaml` for each parser
 - Events from Phase 1 updaters trigger corresponding parse-validate flows
 - `validate_file_pair()` runs `blobtk validate` on each output
 - Gate S3 upload on validation success
 
 **Step 9: Configure S3 output paths**
+
 - Validated outputs go to `s3://goat/validated/{directory}/` (NOT `s3://goat/resources/` or `s3://goat/sources/`)
 - Both validated TSV and validated YAML uploaded
 - Validation report (JSONL) uploaded alongside for audit
 
 ### Relevant Files (Phase 2)
+
 - `flows/parsers/parse_sequencing_status.py` — complete implementation
 - `flows/parsers/parse_refseq_organelles.py` — replace stub
 - `flows/parsers/parse_blobtoolkit.py` — new
@@ -263,6 +304,7 @@ All data sources processed by fetch-parse-validate pipeline. Parsing triggered b
 - Local copies of YAML configs from `goat-data/sources/` for development
 
 ### Verification (Phase 2)
+
 1. Each parser produces TSV matching the YAML config headers
 2. `blobtk validate -g <yaml>` passes for each output with ≥95% valid rows
 3. Event chain works: updater → parse → validate → S3 upload
@@ -271,6 +313,7 @@ All data sources processed by fetch-parse-validate pipeline. Parsing triggered b
 6. No data loss: compare parsed row counts against raw input counts
 
 ### Decisions (Phase 2)
+
 - **S3 validated path**: `s3://goat/validated/` (separate from `resources/` and `sources/`)
 - **Parser reuse**: `parse_sequencing_status` handles ALL status list formats via YAML config
 - **Parser reuse**: `parse_genomesize_karyotype` handles ALL genomesize/karyotype sources generically
@@ -282,9 +325,11 @@ All data sources processed by fetch-parse-validate pipeline. Parsing triggered b
 ## Phase 3: Switch Legacy Import to Validated Data
 
 ### Goal
+
 Legacy import workflow reads from `s3://goat/validated/` instead of `s3://goat/resources/` or `s3://goat/sources/`, removing all fetch steps from the import.
 
 ### Steps
+
 1. Verify data parity: compare `s3://goat/validated/` against `s3://goat/sources/` for all directories
 2. Update `goat-data/.github/workflows/genomehubs-index.yml` to read from `s3://goat/validated/`
 3. Remove fetch jobs from `goat-data/.github/workflows/fetch-resources.yml` (or disable)
@@ -293,6 +338,7 @@ Legacy import workflow reads from `s3://goat/validated/` instead of `s3://goat/r
 6. Staged rollout: switch one directory at a time, verify, proceed
 
 ### Verification (Phase 3)
+
 1. Test release produces identical (or improved) Elasticsearch indices
 2. API test suite passes
 3. UI test suite passes
@@ -300,6 +346,7 @@ Legacy import workflow reads from `s3://goat/validated/` instead of `s3://goat/r
 5. Rollback path confirmed: can revert to `s3://goat/sources/` if issues
 
 ### Risk Mitigation
+
 - Keep `s3://goat/sources/` and `s3://goat/resources/` intact as rollback
 - Phase 3 changes only S3 paths in workflow config, easily reversible
 - Switch one source directory at a time (assembly-data first, then status-lists, etc.)
@@ -309,9 +356,11 @@ Legacy import workflow reads from `s3://goat/validated/` instead of `s3://goat/r
 ## Phase 4: Replace Legacy Import (Future)
 
 ### Goal
+
 Replace `genomehubs index` with updated import code that reads validated TSV/YAML pairs directly.
 
 ### Scope
+
 - Requires new import code not yet available
 - Skip validation/lookup steps (already done in Phase 2)
 - Direct TSV→Elasticsearch indexing
@@ -321,24 +370,186 @@ Replace `genomehubs index` with updated import code that reads validated TSV/YAM
 ## Phase 5: Full Pipeline Migration (Future)
 
 ### Goal
+
 Remove all GitHub Actions workflow dependencies; full pipeline runs in Prefect.
 
 ### Scope
+
 - Yet to be defined
 - Includes: ES init, indexing, fill, test, release promotion
 - Replaces: s3_release.yml, genomehubs-init.yml, genomehubs-index.yml, genomehubs-fill.yml, genomehubs-test.yml
 
 ---
 
+## Network Robustness Review
+
+### Current `safe_get()` Implementation
+
+The existing `safe_get()` in `flows/lib/utils.py` provides:
+
+- Configurable timeout (default 300s)
+- Supports GET/POST/HEAD methods
+- Raises on HTTP errors via `response.raise_for_status()`
+- **No built-in retry logic** — relies entirely on Prefect task-level retries
+
+### Current Retry Patterns Across Updaters
+
+| Updater                    | Task Retries | Delay | Notes                                                     |
+| -------------------------- | ------------ | ----- | --------------------------------------------------------- |
+| `update_tolid_prefixes`    | 2            | 2s    | Reasonable for a single file download                     |
+| `update_ncbi_datasets`     | 2            | 2s    | Too few for NCBI rate-limited API; batches of 50          |
+| `update_nhm_status_list`   | 100          | 60s   | Very aggressive — NHM API known to be unstable            |
+| `update_tol_portal_status` | 3            | 60s   | Orchestrator-level retries re-run entire Docker container |
+| `update_tol_genome_notes`  | 3            | 60s   | Same orchestrator pattern                                 |
+| `update_ncbi_taxonomy`     | 2            | 2s    | FTP download — may need longer delay                      |
+| `update_ott_taxonomy`      | 2            | 2s    | HTTP download of .tgz — adequate                          |
+| `update_boat_config`       | (not set)    | —     | SSH-based, different failure modes                        |
+
+### Gaps & Recommendations for New Updaters
+
+**1. Add HTTP-level retry to `safe_get()`** (or create `resilient_get()`)
+
+- Use `urllib3.util.Retry` with `requests.adapters.HTTPAdapter` for transport-level retries
+- Retry on: 429 (rate limit), 500, 502, 503, 504
+- Exponential backoff: 1s, 2s, 4s (3 attempts)
+- This separates transient HTTP failures from task-level Prefect retries (which re-run the entire task)
+- Existing updaters benefit automatically when `safe_get()` is hardened
+
+**2. Per-source timeout tuning**
+| Source | Recommended Timeout | Rationale |
+|--------|-------------------|-----------|
+| VGP (GitHub raw) | 30s | Small YAML file, fast CDN |
+| JGI API | 120s per page | Paginated, can be slow |
+| Ensembl FTP | 300s | Large JSON files (>100MB for Vertebrates) |
+| UCSC | 60s | Small text file |
+| SRA API | 300s | Potentially large responses |
+| BlobToolKit API | 120s per request | Many per-assembly detail calls |
+| RefSeq FTP | 600s | Large GenBank files |
+| Google Sheets | 60s per sheet | Can be slow on large sheets |
+
+**3. Partial failure handling for paginated APIs**
+
+- JGI, BlobToolKit, and SRA all paginate — a failure mid-pagination should not discard pages already fetched
+- Write each page to a temp file; only assemble final TSV after all pages succeed
+- If a page fails after retries, emit a warning event with partial count and halt gracefully
+
+**4. Idempotency and freshness checks**
+
+- `update_tolid_prefixes` already uses HTTP HEAD timestamp comparison — reuse this pattern
+- New updaters should check `Last-Modified` or `ETag` before downloading, using `is_local_file_current_http()`
+- For APIs without timestamp headers (JGI, BlobToolKit), compare MD5 of output against previous S3 version using `generate_md5()`
+
+**5. S3 upload atomicity**
+
+- Current `upload_to_s3()` uses `s3cmd put` — if interrupted, leaves partial file on S3
+- Recommendation: upload to a `.tmp` key first, then copy to final key and delete `.tmp`
+- Or use boto3 multipart upload with automatic cleanup on failure
+
+**6. Connection pooling for high-volume API calls**
+
+- BlobToolKit updater will make ~10,000+ individual API calls (one per assembly)
+- Use a `requests.Session()` to reuse TCP connections and benefit from connection pooling
+- Add rate limiting (e.g., 10 req/s) to avoid overwhelming the BlobToolKit API
+
+**7. DNS and TLS failure handling**
+
+- `requests.exceptions.ConnectionError` and `requests.exceptions.SSLError` are not HTTP status codes — they won't be caught by status-code retry logic
+- Ensure transport-level retries cover these cases
+- Add explicit handling in updaters: log the error clearly, distinguish transient DNS vs permanent config errors
+
+---
+
+## Logging Review
+
+### Current Logging Patterns in the Data Repo
+
+**Primary mechanism:** `print()` with `@task(log_prints=True)`
+
+- When running under Prefect, print statements are captured as INFO-level logs
+- When `SKIP_PREFECT=true`, print goes to stdout (useful for local testing)
+- No structured logging (no JSON, no log levels beyond print)
+
+**What's logged today (by updater):**
+
+| Updater                      | Logging Pattern                                  | Gaps                              |
+| ---------------------------- | ------------------------------------------------ | --------------------------------- |
+| `update_ncbi_datasets`       | Prints batch progress, line counts, match status | No timing info                    |
+| `update_ncbi_taxonomy`       | Prints MD5 comparison, extraction status         | Good — includes checksums         |
+| `update_tolid_prefixes`      | Prints line count, timestamp comparison result   | Good — includes freshness check   |
+| `update_nhm_status_list`     | Prints page count, record counts per page        | Missing total elapsed time        |
+| `update_tol_portal_status`   | Minimal — Docker output captured                 | Docker stdout mixed with app logs |
+| `update_tol_genome_notes`    | Minimal — Docker output captured                 | Same Docker stdout issue          |
+| `update_ena_taxonomy_extra`  | Prints taxon counts                              | Missing API call timing           |
+| `update_genomehubs_taxonomy` | Prints blobtk command and result                 | Good — includes command           |
+| `update_ott_taxonomy`        | Prints download size, extraction                 | Good                              |
+| `update_boat_config`         | Prints API queries, SSH commands                 | Good — verbose                    |
+
+### Recommendations for New Updaters
+
+**1. Standardize a logging helper**
+Create a `log_progress()` utility in `flows/lib/utils.py` that:
+
+- Prints a timestamped message (ISO 8601)
+- Includes the updater/task name as a prefix
+- Works identically with and without Prefect (`print()`-based, not `logging` module)
+- Example: `[2026-04-24T12:00:00Z] update_vgp_status: Fetched 1,234 records in 3.2s`
+
+**2. Log network call summaries**
+Every HTTP request should log:
+
+- URL (redacted if contains secrets)
+- Method (GET/POST/HEAD)
+- Response status code
+- Response size (bytes)
+- Elapsed time (seconds)
+- Whether the response was from cache/retry
+
+**3. Log output file summaries**
+After writing each output file, log:
+
+- File path (local and S3)
+- Row count
+- File size
+- MD5 hash
+- Whether it matches previous version (changed/unchanged)
+
+**4. Log events emitted**
+Print a summary when emitting Prefect events:
+
+- Event name
+- `matches.previous` value
+- Key payload fields (row count, etc.)
+- This aids debugging when running with `SKIP_PREFECT=true` (since `emit_event` is a no-op)
+
+**5. Error context in exceptions**
+Every caught exception should include:
+
+- The URL or resource that failed
+- The HTTP status code (if applicable)
+- The attempt number (if retrying)
+- A hint about whether the error is transient or permanent
+- Example: `RuntimeError("JGI OAuth token exchange failed (attempt 2/3): 401 Unauthorized — check JGI_OFFLINE_TOKEN is valid")`
+
+**6. Docker orchestrator logging**
+For Docker-isolated flows (`tol_portal_status`, `tol_genome_notes`):
+
+- Capture and prefix Docker stdout/stderr separately
+- Log Docker exit code explicitly
+- Log the full Docker command (with secrets redacted) for reproducibility
+
+---
+
 ## Conventions Reference
 
 ### YAML/TSV Pair Convention (goat-data)
+
 - **Prefix patterns**: `ATTR_` (attribute defs), `TAXON_` (taxonomy), `FILE_` (data sources), unprefixed (primary)
 - **YAML structure**: `file:` metadata, `attributes:` field mappings, `taxonomy:` taxon matching, `identifiers:` ID columns
 - **`needs:`** directive: lists dependent YAML files that must be co-located
 - **TSV naming**: matches `file.name` in YAML config, often `.gz` compressed
 
 ### Data Repo Code Conventions
+
 - Absolute imports: `from flows.lib import utils`
 - Google-style docstrings with type hints
 - `SKIP_PREFECT=true` for local testing
@@ -350,6 +561,7 @@ Remove all GitHub Actions workflow dependencies; full pipeline runs in Prefect.
 - Black formatter, 88-char line length
 
 ### Legacy Code Bug Risks to Avoid
+
 1. `parse_blobtoolkit.py` line 66: debug `print(plots)` left in production
 2. `import_status_lib.py`: duplicated across directories, encoding silently fails
 3. `fetch-or-fallback.sh`: `|| exit 0` masks real errors
