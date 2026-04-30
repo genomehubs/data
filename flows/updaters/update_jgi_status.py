@@ -178,12 +178,13 @@ def update_jgi_status(
     """
     if not is_safe_path(output_path):
         raise ValueError(f"Unsafe output path: {output_path}")
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    resolved_path = os.path.abspath(output_path)
+    os.makedirs(os.path.dirname(resolved_path), exist_ok=True)
 
-    line_count = fetch_jgi_tsv(output_path, min_records)
+    line_count = fetch_jgi_tsv(resolved_path, min_records)
 
     if line_count > min_records and s3_path:
-        upload_s3_tsv(output_path, s3_path)
+        upload_s3_tsv(resolved_path, s3_path)
 
     emit_event(
         event="update.jgi.status.finished",

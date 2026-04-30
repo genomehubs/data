@@ -315,7 +315,7 @@ def upload_s3_file(local_path: str, s3_path: str) -> None:
 def update_sra_data(
     output_path: str,
     input_path: str = None,
-    root_taxid: str = "2759",
+    root_taxid: str = "9612",
     s3_path: str = None,
     min_records: int = 0,
 ) -> bool:
@@ -336,15 +336,16 @@ def update_sra_data(
     """
     if not is_safe_path(output_path):
         raise ValueError(f"Unsafe output path: {output_path}")
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    resolved_path = os.path.abspath(output_path)
+    os.makedirs(os.path.dirname(resolved_path), exist_ok=True)
 
     if input_path and os.path.isfile(input_path):
         xml_path = input_path
     else:
-        xml_path = f"{output_path}.xml"
+        xml_path = f"{resolved_path}.xml"
         fetch_sra_xml(xml_path, root_taxid=root_taxid)
 
-    row_count = parse_and_write_sra(xml_path, output_path)
+    row_count = parse_and_write_sra(xml_path, resolved_path)
 
     if row_count < min_records:
         raise RuntimeError(
@@ -370,7 +371,7 @@ if __name__ == "__main__":
         [
             required(OUTPUT_PATH),
             INPUT_PATH,
-            default(ROOT_TAXID, "2759"),
+            default(ROOT_TAXID, "9612"),
             S3_PATH,
             MIN_RECORDS,
         ],

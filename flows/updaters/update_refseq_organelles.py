@@ -285,10 +285,11 @@ def update_refseq_organelles(
     """
     if not is_safe_path(output_path):
         raise ValueError(f"Unsafe output path: {output_path}")
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    resolved_path = os.path.abspath(output_path)
+    os.makedirs(os.path.dirname(resolved_path), exist_ok=True)
 
     row_count = fetch_and_parse_organelles(
-        output_path, root_taxon=root_taxid
+        resolved_path, root_taxon=root_taxid
     )
 
     if row_count < min_records:

@@ -64,14 +64,16 @@ def update_vgp_status(
     Returns:
         bool: True on success.
     """
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    line_count = fetch_vgp_tsv(output_path, min_records)
+
+    resolved_path = os.path.abspath(output_path)
+    os.makedirs(os.path.dirname(resolved_path), exist_ok=True)
+    line_count = fetch_vgp_tsv(resolved_path, min_records)
     if line_count > min_records and s3_path:
-        upload_s3_tsv(output_path, s3_path)
+        upload_s3_tsv(resolved_path, s3_path)
     emit_event(
         event="update.vgp.status.finished",
         resource={
-            "prefect.resource.id": f"update.vgp.{output_path}",
+            "prefect.resource.id": f"update.vgp.{resolved_path}",
             "prefect.resource.type": "vgp.status",
         },
         payload={"line_count": line_count},
