@@ -252,19 +252,21 @@ def update_blobtoolkit(
     """
     if not is_safe_path(output_path):
         raise ValueError(f"Unsafe output path: {output_path}")
-    os.makedirs(output_path, exist_ok=True)
+
+    resolved_path = os.path.abspath(output_path)
+    os.makedirs(resolved_path, exist_ok=True)
 
     row_count, file_count = fetch_blobtoolkit(
-        output_path, min_records=min_records
+        resolved_path, min_records=min_records
     )
 
     if s3_path:
-        upload_s3_files(output_path, s3_path)
+        upload_s3_files(resolved_path, s3_path)
 
     emit_event(
         event="update.blobtoolkit.finished",
         resource={
-            "prefect.resource.id": f"update.btk.{output_path}",
+            "prefect.resource.id": f"update.btk.{resolved_path}",
             "prefect.resource.type": "blobtoolkit",
         },
         payload={"row_count": row_count, "file_count": file_count},

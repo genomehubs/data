@@ -179,10 +179,12 @@ def update_ensembl_metadata(
     """
     if not is_safe_path(output_path):
         raise ValueError(f"Unsafe output path: {output_path}")
-    os.makedirs(output_path, exist_ok=True)
+
+    resolved_path = os.path.abspath(output_path)
+    os.makedirs(resolved_path, exist_ok=True)
 
     div = EnsemblDivision(division.lower())
-    local_file, row_count = fetch_ensembl_division(div, output_path)
+    local_file, row_count = fetch_ensembl_division(div, resolved_path)
 
     if s3_path:
         output_name = DIVISION_OUTPUT_NAMES[div]
@@ -192,7 +194,7 @@ def update_ensembl_metadata(
     emit_event(
         event="update.ensembl.metadata.finished",
         resource={
-            "prefect.resource.id": f"update.ensembl.{division}.{output_path}",
+            "prefect.resource.id": f"update.ensembl.{division}.{resolved_path}",
             "prefect.resource.type": "ensembl.metadata",
             "prefect.resource.division": division,
         },

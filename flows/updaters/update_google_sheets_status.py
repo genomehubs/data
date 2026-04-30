@@ -387,7 +387,9 @@ def update_google_sheets_status(
     """
     if not is_safe_path(output_path):
         raise ValueError(f"Unsafe output path: {output_path}")
-    os.makedirs(output_path, exist_ok=True)
+
+    resolved_path = os.path.abspath(output_path)
+    os.makedirs(resolved_path, exist_ok=True)
 
     if index_url is None:
         index_url = os.environ.get("GOAT_SHEETS_INDEX_URL", "")
@@ -395,12 +397,12 @@ def update_google_sheets_status(
     total = 0
     project_results = {}
     if index_url:
-        project_results = fetch_project_status_sheets(index_url, output_path)
+        project_results = fetch_project_status_sheets(index_url, resolved_path)
         total += sum(project_results.values())
     else:
         print("No index URL provided — skipping project status sheets")
 
-    other_results = fetch_other_sheets(output_path)
+    other_results = fetch_other_sheets(resolved_path)
     total += sum(other_results.values())
 
     if total < min_records:
@@ -409,12 +411,12 @@ def update_google_sheets_status(
         )
 
     if s3_path:
-        upload_s3_dir(output_path, s3_path)
+        upload_s3_dir(resolved_path, s3_path)
 
     emit_event(
         event="update.google.sheets.status.finished",
         resource={
-            "prefect.resource.id": f"update.google.sheets.status.{output_path}",
+            "prefect.resource.id": f"update.google.sheets.status.{resolved_path}",
             "prefect.resource.type": "google.sheets.status",
         },
         payload={

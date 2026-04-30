@@ -403,3 +403,175 @@ deployments:
     schedules:
       - *weekly
     work_pool: *goat_data_work_pool
+
+  # -----------------------------------------------------------------------
+  # Phase 2 fetch-parse-validate — triggered by Phase 1 update events
+  # -----------------------------------------------------------------------
+
+  - name: fetch-parse-validate-blobtoolkit
+    # Triggered by update.blobtoolkit.finished
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.BLOBTOOLKIT"
+      yaml_path: "../goat-data-main/sources/btk/btk.types.yaml"
+      s3_path: "s3://goat/sources/btk/"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: blobtoolkit
+        expect:
+          - update.blobtoolkit.finished
+        parameters:
+          parser: "ParserEnum.BLOBTOOLKIT"
+          yaml_path: "../goat-data-main/sources/btk/btk.types.yaml"
+          s3_path: "s3://goat/sources/btk/"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-refseq-organelles
+    # Triggered by update.refseq.organelles.finished
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.REFSEQ_ORGANELLES"
+      yaml_path: "../goat-data-main/sources/assembly-data/refseq_organelles.types.yaml"
+      s3_path: "s3://goat/sources/assembly-data/"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: refseq.organelles
+        expect:
+          - update.refseq.organelles.finished
+        parameters:
+          parser: "ParserEnum.REFSEQ_ORGANELLES"
+          yaml_path: "../goat-data-main/sources/assembly-data/refseq_organelles.types.yaml"
+          s3_path: "s3://goat/sources/assembly-data/"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-sra-data
+    # Triggered by update.sra.data.finished
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.SRA_DATA"
+      yaml_path: "../goat-data-main/sources/sra/sra.types.yaml"
+      s3_path: "s3://goat/sources/sra/"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: sra.data
+        expect:
+          - update.sra.data.finished
+        parameters:
+          parser: "ParserEnum.SRA_DATA"
+          yaml_path: "../goat-data-main/sources/sra/sra.types.yaml"
+          s3_path: "s3://goat/sources/sra/"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-vgp-status
+    # Triggered by update.vgp.status.finished
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.SEQUENCING_STATUS"
+      yaml_path: "../goat-data-main/sources/assembly-data/vgp_phase1.types.yaml"
+      s3_path: "s3://goat/sources/assembly-data/"
+      work_dir: "/home/ubuntu/tmp/test/status-lists"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: vgp.status
+        expect:
+          - update.vgp.status.finished
+        parameters:
+          parser: "ParserEnum.SEQUENCING_STATUS"
+          yaml_path: "../goat-data-main/sources/assembly-data/vgp_phase1.types.yaml"
+          s3_path: "s3://goat/sources/assembly-data/"
+          work_dir: "/home/ubuntu/tmp/test/status-lists"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-jgi-status
+    # Triggered by update.jgi.status.finished
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.SEQUENCING_STATUS"
+      yaml_path: "../goat-data-main/sources/assembly-data/1kfg_manual_bioprojects.types.yaml"
+      s3_path: "s3://goat/sources/assembly-data/"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: jgi.status
+        expect:
+          - update.jgi.status.finished
+        parameters:
+          parser: "ParserEnum.SEQUENCING_STATUS"
+          yaml_path: "../goat-data-main/sources/assembly-data/1kfg_manual_bioprojects.types.yaml"
+          s3_path: "s3://goat/sources/assembly-data/"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-ucsc-assemblies
+    # Triggered by update.ucsc.assemblies.finished
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.SEQUENCING_STATUS"
+      yaml_path: "../goat-data-main/sources/assembly-data/ucsc_ids.types.yaml"
+      s3_path: "s3://goat/sources/assembly-data/"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: ucsc.assemblies
+        expect:
+          - update.ucsc.assemblies.finished
+        parameters:
+          parser: "ParserEnum.SEQUENCING_STATUS"
+          yaml_path: "../goat-data-main/sources/assembly-data/ucsc_ids.types.yaml"
+          s3_path: "s3://goat/sources/assembly-data/"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-nhm-status
+    # Triggered by update.nhm.status.finished (legacy NHM updater)
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.SEQUENCING_STATUS"
+      yaml_path: "../goat-data-main/sources/status-lists/FILE_DTOL_nhm.types.yaml"
+      s3_path: "s3://goat/sources/status-lists/"
+      work_dir: "/home/ubuntu/tmp/test/status-lists"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: nhm.status
+        expect:
+          - update.nhm.status.finished
+        parameters:
+          parser: "ParserEnum.SEQUENCING_STATUS"
+          yaml_path: "../goat-data-main/sources/status-lists/FILE_DTOL_nhm.types.yaml"
+          s3_path: "s3://goat/sources/status-lists/"
+          work_dir: "/home/ubuntu/tmp/test/status-lists"
+          dry_run: true
+    work_pool: *goat_data_work_pool

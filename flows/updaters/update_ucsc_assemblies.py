@@ -67,9 +67,11 @@ def update_ucsc_assemblies(
     """
     if not is_safe_path(output_path):
         raise ValueError(f"Unsafe output path: {output_path}")
-    os.makedirs(output_path, exist_ok=True)
 
-    local_file, line_count = fetch_ucsc_hub_list(output_path)
+    resolved_path = os.path.abspath(output_path)
+    os.makedirs(resolved_path, exist_ok=True)
+
+    local_file, line_count = fetch_ucsc_hub_list(resolved_path)
 
     if s3_path:
         remote_path = f"{s3_path.rstrip('/')}/{OUTPUT_FILENAME}"
@@ -78,7 +80,7 @@ def update_ucsc_assemblies(
     emit_event(
         event="update.ucsc.assemblies.finished",
         resource={
-            "prefect.resource.id": f"update.ucsc.{output_path}",
+            "prefect.resource.id": f"update.ucsc.{resolved_path}",
             "prefect.resource.type": "ucsc.assemblies",
         },
         payload={"line_count": line_count},
