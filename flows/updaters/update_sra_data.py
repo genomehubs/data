@@ -315,7 +315,7 @@ def upload_s3_file(local_path: str, s3_path: str) -> None:
 def update_sra_data(
     output_path: str,
     input_path: str = None,
-    root_taxid: str = "9612",
+    root_taxid: str = "2759",
     s3_path: str = None,
     min_records: int = 0,
 ) -> bool:
@@ -371,7 +371,7 @@ if __name__ == "__main__":
         [
             required(OUTPUT_PATH),
             INPUT_PATH,
-            default(ROOT_TAXID, "9612"),
+            default(ROOT_TAXID, "2759"),
             S3_PATH,
             MIN_RECORDS,
         ],
