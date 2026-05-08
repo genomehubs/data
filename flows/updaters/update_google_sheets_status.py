@@ -230,6 +230,7 @@ def _fetch_dtol_tolqc_status(output_path: str) -> int:
     )
     df.columns = (
         df.columns.str.strip()
+        .str.replace(".", "")
         .str.replace(" ", "_")
         .str.replace(r"\(", "", regex=True)
         .str.replace(r"\)", "", regex=True)
