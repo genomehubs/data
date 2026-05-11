@@ -55,7 +55,7 @@ CNGB_URL = (
 
 
 def _open_google_spreadsheet(
-    acronym: str, url: str, header_index: int
+    acronym: str, url: str, header_index: str
 ) -> pd.DataFrame:
     """Download a published Google Sheet as TSV and return a DataFrame."""
     encodings = ["utf-8", "ISO-8859-1", "latin1"]
@@ -114,7 +114,7 @@ def _create_mandatory_columns(df: pd.DataFrame) -> pd.DataFrame:
         "target_list_status", "sequencing_status",
     ]:
         if col not in df.columns:
-            df[col] = np.nan
+            df[col] = None
     return df
 
 
@@ -122,7 +122,7 @@ def _expand_target_status(df: pd.DataFrame, acronym: str) -> pd.DataFrame:
     """Populate long_list, family_representative, other_priority columns."""
     for col in ["long_list", "family_representative", "other_priority"]:
         if col not in df.columns:
-            df[col] = np.nan
+            df[col] = None
     df["long_list"] = acronym
 
     lower = acronym.lower()
@@ -164,7 +164,7 @@ def _create_status_columns(df: pd.DataFrame, acronym: str) -> pd.DataFrame:
     ]
     for s in statuses:
         if s not in df.columns:
-            df[s] = np.nan
+            df[s] = None
         df.loc[df["sequencing_status"] == s, s] = acronym
     return df
 
@@ -176,12 +176,13 @@ def _expand_sequencing_status(df: pd.DataFrame, acronym: str) -> pd.DataFrame:
     df.loc[df["open"] == acronym, "in_progress"] = acronym
     df.loc[df["data_generation"] == acronym, "in_progress"] = acronym
     df.loc[df["in_assembly"] == acronym, "in_progress"] = acronym
+    df.loc[df["in_progress"] == acronym, "data_generation"] = acronym
     df.loc[df["in_progress"] == acronym, "sample_acquired"] = acronym
     df.loc[df["sample_acquired"] == acronym, "sample_collected"] = acronym
     return df
 
 
-def _process_project(acronym: str, url: str, header_row: int) -> pd.DataFrame:
+def _process_project(acronym: str, url: str, header_row: str) -> pd.DataFrame:
     """Full processing pipeline for one project status sheet."""
     df = _open_google_spreadsheet(acronym, url, header_row)
     df = _general_cleanup(df)
@@ -292,6 +293,7 @@ def fetch_project_status_sheets(
         usecols=["project_acronym", "published_url", "start_header_line"],
         dtype={"project_acronym": str, "published_url": str, "start_header_line": int},
     )
+    print(f"Found {len(index_df)} project sheets in index")
 
     results = {}
     for _, row in index_df.iterrows():
@@ -310,6 +312,7 @@ def fetch_project_status_sheets(
             failed_path = os.path.join(output_dir, f"{acronym}_expanded.tsv.failed")
             open(failed_path, "w").close()  # noqa: SIM115 — legacy compat
             results[acronym] = 0
+    print(results)
     return results
 
 
