@@ -269,12 +269,23 @@ deployments:
   # Phase 1 updaters — external data fetching (migrated from goat-data)
   # -----------------------------------------------------------------------
 
+  - name: update-vgp-original-status
+    # Fetch VGP original status list from GitHub YAML tracker (monthly)
+    entrypoint: flows/updaters/update_vgp_original_status.py:update_vgp_original_status
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/status-lists/vgp_original_status.tsv"
+      s3_path: s3://goat/resources/status-lists/vgp_original_status.tsv
+      min_records: 100
+    schedules:
+      - *monthly
+    work_pool: *goat_data_work_pool
+
   - name: update-vgp-status
-    # Fetch VGP status list from GitHub YAML tracker
+    # Fetch VGP Ordinal Phase1+ status from the live Google Sheet
     entrypoint: flows/updaters/update_vgp_status.py:update_vgp_status
     parameters:
-      output_path: "/home/ubuntu/tmp/test/status-lists/vgp_status.tsv"
-      s3_path: s3://goat/resources/status-lists/vgp_status.tsv
+      output_path: "/home/ubuntu/tmp/test/status-lists/VGP_Ordinal_Phase1_plus.tsv"
+      s3_path: s3://goat/resources/status-lists/VGP_Ordinal_Phase1_plus.tsv
       min_records: 100
     schedules:
       - *weekly
