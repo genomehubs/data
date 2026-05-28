@@ -1,9 +1,9 @@
-"""Batch validate all Google Sheets status list TSVs.
+"""Batch fetch-parse-validate for all Google Sheets status list TSVs.
 
 Triggered by update.google.sheets.status.finished, this flow iterates
 through all FILE_*.types.yaml in the status-lists directory and runs
-SKIP_PARSING + validate for each one whose corresponding TSV is present
-in work_dir.
+the full fetch-parse-validate pipeline (with SKIP_PARSING) for each one
+whose corresponding TSV is present in work_dir.
 """
 
 import os
@@ -13,54 +13,31 @@ from typing import Optional
 
 from flows.lib.conditional_import import flow
 from flows.lib.utils import load_config
-from flows.parsers.register import register_plugins
-from flows.validators.validate_file_pair import validate_file_pair
-
-PARSERS = register_plugins()
-
-
-def _copy_yaml_to_workdir(yaml_path: str, work_dir: str) -> str:
-    """Copy YAML (and dependencies) to work_dir."""
-    import shutil
-
-    os.makedirs(work_dir, exist_ok=True)
-    dest = os.path.join(work_dir, os.path.basename(yaml_path))
-    shutil.copy(yaml_path, dest)
-    config = load_config(yaml_path)
-    if "needs" in config.config.get("file", {}):
-        source_dir = os.path.dirname(yaml_path)
-        needs = config.config["file"]["needs"]
-        if isinstance(needs, str):
-            needs = [needs]
-        for dep in needs:
-            dep_path = os.path.join(source_dir, dep)
-            if os.path.exists(dep_path):
-                shutil.copy(dep_path, work_dir)
-    return dest
+from flows.lib.wrapper_fetch_parse_validate import Parser, fetch_parse_validate
 
 
 @flow(log_prints=True)
 def batch_validate_status_lists(
     yaml_dir: str,
     work_dir: str,
+    s3_path: str = "s3://goat/sources/status-lists/",
     taxdump_path: Optional[str] = None,
     dry_run: bool = False,
-    s3_path: Optional[str] = None,
     min_valid: int = 0,
     min_assigned: int = 0,
 ) -> bool:
-    """Validate all status list TSVs present in work_dir.
+    """Run fetch-parse-validate (SKIP_PARSING) for all status list TSVs in work_dir.
 
     For each FILE_*.types.yaml in yaml_dir, checks if the corresponding
-    TSV exists in work_dir. If present, runs SKIP_PARSING (file existence
-    check) then validate_file_pair.
+    TSV exists in work_dir. If present, invokes the standard
+    fetch_parse_validate flow with SKIP_PARSING.
 
     Args:
         yaml_dir: Directory containing FILE_*.types.yaml files.
         work_dir: Directory containing TSVs output by the updater.
+        s3_path: S3 path prefix for validated files.
         taxdump_path: Optional NCBI taxdump path.
         dry_run: If True, skip S3 upload.
-        s3_path: S3 path for validated files (None = local only).
         min_valid: Minimum valid row count per file.
         min_assigned: Minimum assigned taxa per file.
 
@@ -72,7 +49,6 @@ def batch_validate_status_lists(
         print(f"No FILE_*.types.yaml found in {yaml_dir}")
         return False
 
-    skip_parser = PARSERS.parsers["SKIP_PARSING"]
     results = {}
 
     for yaml_path in yaml_files:
@@ -92,46 +68,28 @@ def batch_validate_status_lists(
             results[yaml_name] = "skip-no-tsv"
             continue
 
-        # Copy YAML to work_dir for validator
-        working_yaml = _copy_yaml_to_workdir(yaml_path, work_dir)
-
-        # Run SKIP_PARSING (verifies file exists)
         try:
-            skip_parser.func(
-                working_yaml=working_yaml,
-                work_dir=work_dir,
-                append=False,
-            )
-        except FileNotFoundError as e:
-            print(f"  FAIL {yaml_name}: TSV not found after copy — {e}")
-            results[yaml_name] = "fail-parser"
-            continue
-
-        # Run validation
-        effective_s3 = None if dry_run else s3_path
-        try:
-            status = validate_file_pair(
+            fetch_parse_validate(
+                parser=Parser.SKIP_PARSING,
                 yaml_path=yaml_path,
+                s3_path=s3_path,
                 work_dir=work_dir,
                 taxdump_path=taxdump_path,
-                s3_path=effective_s3,
+                dry_run=dry_run,
                 min_valid=min_valid,
                 min_assigned=min_assigned,
             )
-            results[yaml_name] = "pass" if status else "fail-validation"
-            if status:
-                print(f"  ✓ {yaml_name}")
-            else:
-                print(f"  ✗ {yaml_name}")
+            results[yaml_name] = "pass"
+            print(f"  ✓ {yaml_name}")
         except Exception as e:
             print(f"  ✗ {yaml_name}: {e}")
-            results[yaml_name] = "fail-exception"
+            results[yaml_name] = "fail"
 
     # Summary
     passed = sum(1 for v in results.values() if v == "pass")
-    failed = sum(1 for v in results.values() if v.startswith("fail"))
+    failed = sum(1 for v in results.values() if v == "fail")
     skipped = sum(1 for v in results.values() if v.startswith("skip"))
-    print(f"\nBatch validation: {passed} passed, {failed} failed, {skipped} skipped")
+    print(f"\nBatch fetch-parse-validate: {passed} passed, {failed} failed, {skipped} skipped")
 
     return failed == 0
 

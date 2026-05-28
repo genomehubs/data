@@ -421,11 +421,12 @@ deployments:
 
   - name: batch-validate-google-sheets-status
     # Triggered by update.google.sheets.status.finished
-    # All Google Sheets status TSVs are already compatible with their YAML schemas
+    # Runs fetch-parse-validate (SKIP_PARSING) for each status list TSV
     entrypoint: flows/orchestrators/batch_validate_status_lists.py:batch_validate_status_lists
     parameters:
       yaml_dir: "../goat-data-main/sources/status-lists"
       work_dir: "/home/ubuntu/tmp/test/status-lists/google-sheets"
+      s3_path: "s3://goat/sources/status-lists/"
       dry_run: true
     triggers:
       - enabled: true
@@ -437,14 +438,16 @@ deployments:
         parameters:
           yaml_dir: "../goat-data-main/sources/status-lists"
           work_dir: "/home/ubuntu/tmp/test/status-lists/google-sheets"
+          s3_path: "s3://goat/sources/status-lists/"
           dry_run: true
     work_pool: *goat_data_work_pool
 
   - name: fetch-parse-validate-blobtoolkit
     # Triggered by update.blobtoolkit.finished
+    # Skip parsing — blobtk validate handles taxonomy column detection
     entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
     parameters:
-      parser: "ParserEnum.BLOBTOOLKIT"
+      parser: "ParserEnum.SKIP_PARSING"
       yaml_path: "../goat-data-main/sources/btk/btk.types.yaml"
       s3_path: "s3://goat/sources/btk/"
       work_dir: "/home/ubuntu/tmp/test/assembly-data"
@@ -457,7 +460,7 @@ deployments:
         expect:
           - update.blobtoolkit.finished
         parameters:
-          parser: "ParserEnum.BLOBTOOLKIT"
+          parser: "ParserEnum.SKIP_PARSING"
           yaml_path: "../goat-data-main/sources/btk/btk.types.yaml"
           s3_path: "s3://goat/sources/btk/"
           work_dir: "/home/ubuntu/tmp/test/assembly-data"
@@ -564,9 +567,10 @@ deployments:
 
   - name: fetch-parse-validate-ucsc-assemblies
     # Triggered by update.ucsc.assemblies.finished
+    # Skip parsing — YAML column mapping can be adjusted later if needed
     entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
     parameters:
-      parser: "ParserEnum.SEQUENCING_STATUS"
+      parser: "ParserEnum.SKIP_PARSING"
       yaml_path: "../goat-data-main/sources/assembly-data/ucsc_ids.types.yaml"
       s3_path: "s3://goat/sources/assembly-data/"
       work_dir: "/home/ubuntu/tmp/test/assembly-data"
@@ -579,7 +583,7 @@ deployments:
         expect:
           - update.ucsc.assemblies.finished
         parameters:
-          parser: "ParserEnum.SEQUENCING_STATUS"
+          parser: "ParserEnum.SKIP_PARSING"
           yaml_path: "../goat-data-main/sources/assembly-data/ucsc_ids.types.yaml"
           s3_path: "s3://goat/sources/assembly-data/"
           work_dir: "/home/ubuntu/tmp/test/assembly-data"
