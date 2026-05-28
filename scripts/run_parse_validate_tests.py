@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 PARSER_INPUT_MAPPING = {
     # parser_name -> (example_input, yaml_config, comparison_file)
     "SEQUENCING_STATUS": [
-        ("tsv_examples/vgp.tsv", "../goat-data/sources/assembly-data/vgp_phase1.types.yaml", "vgp_phase1.tsv"),
+        ("tsv_examples/ATLASEA_expanded.tsv", "../goat-data/sources/assembly-data/FILE_ATLASEA.types.yaml", "ATLASEA_expanded.tsv"),
         ("tsv_examples/AEGIS_expanded.tsv", "../goat-data/sources/status-lists/FILE_AEGIS.types.yaml", None),  # no S3 source
     ],
     "REFSEQ_ORGANELLES": [

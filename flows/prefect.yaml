@@ -288,7 +288,7 @@ deployments:
       s3_path: s3://goat/resources/status-lists/VGP_Ordinal_Phase1_plus.tsv
       min_records: 100
     schedules:
-      - *weekly
+      - *daily
     work_pool: *goat_data_work_pool
 
   - name: update-ensembl-metadata-main
@@ -412,12 +412,33 @@ deployments:
       output_path: "/home/ubuntu/tmp/test/status-lists/google-sheets"
       s3_path: s3://goat/resources/status-lists/google-sheets/
     schedules:
-      - *weekly
+      - *daily
     work_pool: *goat_data_work_pool
 
   # -----------------------------------------------------------------------
   # Phase 2 fetch-parse-validate — triggered by Phase 1 update events
   # -----------------------------------------------------------------------
+
+  - name: batch-validate-google-sheets-status
+    # Triggered by update.google.sheets.status.finished
+    # All Google Sheets status TSVs are already compatible with their YAML schemas
+    entrypoint: flows/orchestrators/batch_validate_status_lists.py:batch_validate_status_lists
+    parameters:
+      yaml_dir: "../goat-data-main/sources/status-lists"
+      work_dir: "/home/ubuntu/tmp/test/status-lists/google-sheets"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: google.sheets.status
+        expect:
+          - update.google.sheets.status.finished
+        parameters:
+          yaml_dir: "../goat-data-main/sources/status-lists"
+          work_dir: "/home/ubuntu/tmp/test/status-lists/google-sheets"
+          dry_run: true
+    work_pool: *goat_data_work_pool
 
   - name: fetch-parse-validate-blobtoolkit
     # Triggered by update.blobtoolkit.finished
@@ -469,9 +490,10 @@ deployments:
 
   - name: fetch-parse-validate-sra-data
     # Triggered by update.sra.data.finished
+    # SRA updater output already matches YAML schema — skip parsing, validate only
     entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
     parameters:
-      parser: "ParserEnum.SRA_DATA"
+      parser: "ParserEnum.SKIP_PARSING"
       yaml_path: "../goat-data-main/sources/sra/sra.types.yaml"
       s3_path: "s3://goat/sources/sra/"
       work_dir: "/home/ubuntu/tmp/test/assembly-data"
@@ -484,7 +506,7 @@ deployments:
         expect:
           - update.sra.data.finished
         parameters:
-          parser: "ParserEnum.SRA_DATA"
+          parser: "ParserEnum.SKIP_PARSING"
           yaml_path: "../goat-data-main/sources/sra/sra.types.yaml"
           s3_path: "s3://goat/sources/sra/"
           work_dir: "/home/ubuntu/tmp/test/assembly-data"
@@ -493,11 +515,12 @@ deployments:
 
   - name: fetch-parse-validate-vgp-status
     # Triggered by update.vgp.status.finished
+    # VGP Ordinal updater output is a superset of YAML columns — skip parsing, validate only
     entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
     parameters:
-      parser: "ParserEnum.SEQUENCING_STATUS"
-      yaml_path: "../goat-data-main/sources/assembly-data/vgp_phase1.types.yaml"
-      s3_path: "s3://goat/sources/assembly-data/"
+      parser: "ParserEnum.SKIP_PARSING"
+      yaml_path: "../goat-data-main/sources/status-lists/FILE_VGP_Ordinal_Phase1.types.yaml"
+      s3_path: "s3://goat/sources/status-lists/"
       work_dir: "/home/ubuntu/tmp/test/status-lists"
       dry_run: true
     triggers:
@@ -508,9 +531,9 @@ deployments:
         expect:
           - update.vgp.status.finished
         parameters:
-          parser: "ParserEnum.SEQUENCING_STATUS"
-          yaml_path: "../goat-data-main/sources/assembly-data/vgp_phase1.types.yaml"
-          s3_path: "s3://goat/sources/assembly-data/"
+          parser: "ParserEnum.SKIP_PARSING"
+          yaml_path: "../goat-data-main/sources/status-lists/FILE_VGP_Ordinal_Phase1.types.yaml"
+          s3_path: "s3://goat/sources/status-lists/"
           work_dir: "/home/ubuntu/tmp/test/status-lists"
           dry_run: true
     work_pool: *goat_data_work_pool
@@ -565,9 +588,10 @@ deployments:
 
   - name: fetch-parse-validate-nhm-status
     # Triggered by update.nhm.status.finished (legacy NHM updater)
+    # NHM updater output is a superset of YAML columns — skip parsing, validate only
     entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
     parameters:
-      parser: "ParserEnum.SEQUENCING_STATUS"
+      parser: "ParserEnum.SKIP_PARSING"
       yaml_path: "../goat-data-main/sources/status-lists/FILE_DTOL_nhm.types.yaml"
       s3_path: "s3://goat/sources/status-lists/"
       work_dir: "/home/ubuntu/tmp/test/status-lists"
@@ -580,7 +604,7 @@ deployments:
         expect:
           - update.nhm.status.finished
         parameters:
-          parser: "ParserEnum.SEQUENCING_STATUS"
+          parser: "ParserEnum.SKIP_PARSING"
           yaml_path: "../goat-data-main/sources/status-lists/FILE_DTOL_nhm.types.yaml"
           s3_path: "s3://goat/sources/status-lists/"
           work_dir: "/home/ubuntu/tmp/test/status-lists"
