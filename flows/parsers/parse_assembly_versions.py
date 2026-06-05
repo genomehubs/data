@@ -6,9 +6,7 @@ copied directly from the previous assembly_current.tsv parse output.
 
 Usage:
     python -m flows.parsers.parse_assembly_versions \\
-        --input_path assembly_data_report.jsonl \\
-        --previous_tsv assembly_current.tsv.previous \\
-        --historical_tsv outputs/assembly_historical.tsv
+        --input_path assembly_data_report.jsonl
 """
 
 import csv
@@ -18,28 +16,29 @@ from glob import glob
 from pathlib import Path
 from typing import Optional
 
+from flows.lib.assembly_versions_utils import parse_accession
 from flows.lib.conditional_import import flow
 from flows.lib.shared_args import INPUT_PATH
 from flows.lib.shared_args import parse_args as _parse_args
 from flows.lib.shared_args import required
 from flows.lib.utils import Parser
-from flows.parsers.parse_backfill_historical_versions import parse_accession
 
-PREVIOUS_TSV = {
-    "flags": ["-p", "--previous_tsv"],
-    "keys": {
-        "help": "Path to assembly_current.tsv from the previous run.",
-        "type": str,
-    },
-}
+def derive_assembly_version_paths(input_path: str) -> tuple[str, str]:
+    """Derive previous_tsv and historical_tsv paths from the input JSONL path.
 
-HISTORICAL_TSV = {
-    "flags": ["-H", "--historical_tsv"],
-    "keys": {
-        "help": "Path to assembly_historical.tsv to update.",
-        "type": str,
-    },
-}
+    Both files are assumed to live alongside the JSONL in the same directory,
+    following the same convention used by parse_ncbi_assemblies.
+
+    Args:
+        input_path (str): Path to the current assembly_data_report.jsonl.
+
+    Returns:
+        tuple: (previous_tsv, historical_tsv) absolute paths.
+    """
+    work_dir = os.path.dirname(os.path.abspath(input_path))
+    previous_tsv = os.path.join(work_dir, "assembly_current.tsv.previous")
+    historical_tsv = os.path.join(work_dir, "assembly_historical.tsv")
+    return previous_tsv, historical_tsv
 
 
 def load_previous_parsed_by_base(previous_tsv: str) -> dict[str, dict[int, dict]]:
@@ -358,10 +357,11 @@ def parse_assembly_versions_wrapper(
     if len(paths) > 1:
         raise ValueError(f"More than one jsonl file found in {work_dir}")
 
+    previous_tsv, historical_tsv = derive_assembly_version_paths(paths[0])
     results = parse_assembly_versions(
         new_jsonl=paths[0],
-        previous_tsv=os.path.join(work_dir, "assembly_current.tsv.previous"),
-        historical_tsv=os.path.join(work_dir, "assembly_historical.tsv"),
+        previous_tsv=previous_tsv,
+        historical_tsv=historical_tsv,
     )
 
     if results["missing_versions_count"] > 0:
@@ -382,18 +382,19 @@ def plugin() -> Parser:
 
 if __name__ == "__main__":
     args = _parse_args(
-        [required(INPUT_PATH), required(PREVIOUS_TSV), required(HISTORICAL_TSV)],
+        [required(INPUT_PATH)],
         description="Daily incremental update of historical assembly records",
     )
+    previous_tsv, historical_tsv = derive_assembly_version_paths(args.input_path)
     results = parse_assembly_versions(
         new_jsonl=args.input_path,
-        previous_tsv=args.previous_tsv,
-        historical_tsv=args.historical_tsv,
+        previous_tsv=previous_tsv,
+        historical_tsv=historical_tsv,
     )
     print(f"Summary: superseded={results['newly_superseded_count']}, "
           f"missing={results['missing_versions_count']}")
     if results["missing_versions_count"] > 0:
-        missing_json_path = Path(args.historical_tsv).parent / "missing_versions.json"
+        missing_json_path = Path(historical_tsv).parent / "missing_versions.json"
         with open(missing_json_path, "w", encoding="utf-8") as f:
             json.dump(results["missing_versions"], f, indent=2)
         print(

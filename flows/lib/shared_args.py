@@ -182,6 +182,14 @@ TAXONOMY_NAME = {
     },
 }
 
+MISSING_JSON = {
+    "flags": ["-m", "--missing_json"],
+    "keys": {
+        "help": "Path to missing_versions.json produced by parse_assembly_versions.",
+        "type": str,
+    },
+}
+
 WORK_DIR = {
     "flags": ["-w", "--work_dir"],
     "keys": {

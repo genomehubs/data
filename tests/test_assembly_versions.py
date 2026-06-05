@@ -6,8 +6,7 @@ Covers:
 - Core supersession detection logic (superseded, missing-with-gap, new-series, v1-skip)
 - Appending to historical TSV with deduplication
 - Parser orchestrator flow behaviour
-- Loading existing historical TSV (updater helper)
-- Updater flow: version selection and TSV merge
+- Updater flow: fetch metadata and write JSONL
 """
 
 import csv
@@ -29,13 +28,14 @@ from flows.parsers.parse_assembly_versions import (  # noqa: E402
     append_superseded_to_tsv,
     build_missing_version_record,
     build_superseded_row,
+    derive_assembly_version_paths,
     identify_newly_superseded,
     load_previous_parsed_by_base,
     parse_assembly_versions,
 )
-from flows.updaters import update_assembly_versions as backfill_module  # noqa: E402
+from flows.updaters import update_assembly_versions as updater_module  # noqa: E402
 from flows.updaters.update_assembly_versions import (  # noqa: E402
-    load_existing_historical,
+    load_missing_versions,
     update_assembly_versions,
 )
 
@@ -365,42 +365,33 @@ class TestIncrementalOrchestrator:
 
 
 # ---------------------------------------------------------------------------
-# TestLoadExistingHistorical
+# TestDeriveAssemblyVersionPaths
 # ---------------------------------------------------------------------------
 
-class TestLoadExistingHistorical:
-    """load_existing_historical indexes rows by genbankAccession."""
+class TestDeriveAssemblyVersionPaths:
+    """derive_assembly_version_paths produces correct sibling file paths."""
 
-    def test_missing_file_returns_empty(self, tmp_path):
-        result = load_existing_historical(str(tmp_path / "nope.tsv"))
-        assert result == {}
+    def test_previous_tsv_in_same_directory(self, tmp_path):
+        jsonl = tmp_path / "assembly_data_report.jsonl"
+        jsonl.touch()
+        previous_tsv, _ = derive_assembly_version_paths(str(jsonl))
+        assert os.path.dirname(previous_tsv) == str(tmp_path)
+        assert previous_tsv.endswith("assembly_current.tsv.previous")
 
-    def test_rows_keyed_by_genbank_accession(self, tmp_path):
-        tsv = tmp_path / "historical.tsv"
-        write_tsv(tsv, [
-            {"genbankAccession": "GCA_000222935.1", "version_status": "superseded"},
-            {"genbankAccession": "GCA_000412225.1", "version_status": "superseded"},
-        ])
-        result = load_existing_historical(str(tsv))
-        assert "GCA_000222935.1" in result
-        assert "GCA_000412225.1" in result
-        assert len(result) == 2
-
-    def test_row_data_preserved(self, tmp_path):
-        tsv = tmp_path / "historical.tsv"
-        write_tsv(tsv, [
-            {"genbankAccession": "GCA_000222935.1", "version_status": "superseded"}
-        ])
-        result = load_existing_historical(str(tsv))
-        assert result["GCA_000222935.1"]["version_status"] == "superseded"
+    def test_historical_tsv_in_same_directory(self, tmp_path):
+        jsonl = tmp_path / "assembly_data_report.jsonl"
+        jsonl.touch()
+        _, historical_tsv = derive_assembly_version_paths(str(jsonl))
+        assert os.path.dirname(historical_tsv) == str(tmp_path)
+        assert historical_tsv.endswith("assembly_historical.tsv")
 
 
 # ---------------------------------------------------------------------------
-# TestBackfillMissingVersionsFlow
+# TestUpdateAssemblyVersionsFlow
 # ---------------------------------------------------------------------------
 
-class TestBackfillMissingVersionsFlow:
-    """update_assembly_versions selects the right version and merges into TSV."""
+class TestUpdateAssemblyVersionsFlow:
+    """update_assembly_versions fetches metadata and writes JSONL."""
 
     def _write_missing_json(self, tmp_path, entries):
         path = tmp_path / "missing.json"
@@ -408,188 +399,94 @@ class TestBackfillMissingVersionsFlow:
             json.dump(entries, f)
         return str(path)
 
-    @patch.object(backfill_module, "write_to_tsv")
-    @patch.object(backfill_module, "find_all_assembly_versions")
-    @patch.object(backfill_module, "parse_historical_version")
-    @patch.object(backfill_module, "utils")
-    def test_correct_version_selected(
-        self, mock_utils, mock_parse, mock_find, mock_write, tmp_path
-    ):
-        """Only the requested missing version should be parsed, not all versions."""
-        mock_utils.load_config.return_value = MagicMock(
-            meta={"file_name": str(tmp_path / "historical.tsv")}
-        )
-        mock_find.return_value = [
-            {"accession": "GCA_000222935.1"},
+    @patch.object(updater_module, "setup_cache_directories")
+    @patch.object(updater_module, "fetch_version_metadata")
+    def test_correct_accession_fetched(self, mock_fetch, mock_setup, tmp_path):
+        """new_accession from missing_json should be passed to fetch_version_metadata."""
+        mock_fetch.return_value = {"accession": "GCA_000222935.2"}
+        missing_json = self._write_missing_json(tmp_path, [
+            {
+                "base_accession": "GCA_000222935",
+                "missing_version": 1,
+                "new_version": 2,
+                "new_accession": "GCA_000222935.2",
+            }
+        ])
+        update_assembly_versions(missing_json=missing_json, work_dir=str(tmp_path))
+        mock_fetch.assert_called_once_with("GCA_000222935.2", str(tmp_path))
+
+    @patch.object(updater_module, "setup_cache_directories")
+    @patch.object(updater_module, "fetch_version_metadata")
+    def test_jsonl_written_with_fetched_records(self, mock_fetch, mock_setup, tmp_path):
+        """Fetched metadata should be written as JSONL lines."""
+        mock_fetch.return_value = {"accession": "GCA_000222935.2", "someField": "value"}
+        missing_json = self._write_missing_json(tmp_path, [
+            {
+                "base_accession": "GCA_000222935",
+                "missing_version": 1,
+                "new_version": 2,
+                "new_accession": "GCA_000222935.2",
+            }
+        ])
+        update_assembly_versions(missing_json=missing_json, work_dir=str(tmp_path))
+        jsonl_path = tmp_path / "missing_assembly_versions.jsonl"
+        assert jsonl_path.exists()
+        records = [json.loads(line) for line in jsonl_path.read_text().strip().splitlines()]
+        assert len(records) == 1
+        assert records[0]["accession"] == "GCA_000222935.2"
+
+    @patch.object(updater_module, "setup_cache_directories")
+    @patch.object(updater_module, "fetch_version_metadata")
+    def test_fetch_failure_skipped(self, mock_fetch, mock_setup, tmp_path):
+        """If fetch_version_metadata returns empty dict, entry is omitted from JSONL."""
+        mock_fetch.return_value = {}
+        missing_json = self._write_missing_json(tmp_path, [
+            {
+                "base_accession": "GCA_000222935",
+                "missing_version": 1,
+                "new_version": 2,
+                "new_accession": "GCA_000222935.2",
+            }
+        ])
+        update_assembly_versions(missing_json=missing_json, work_dir=str(tmp_path))
+        jsonl_path = tmp_path / "missing_assembly_versions.jsonl"
+        assert jsonl_path.read_text().strip() == ""
+
+    @patch.object(updater_module, "setup_cache_directories")
+    @patch.object(updater_module, "fetch_version_metadata")
+    def test_partial_fetch_failures_writes_successful(self, mock_fetch, mock_setup, tmp_path):
+        """Successful fetches are written even when some entries return no metadata."""
+        mock_fetch.side_effect = [
             {"accession": "GCA_000222935.2"},
+            {},
         ]
-        mock_parse.return_value = {"genbankAccession": "GCA_000222935.1"}
-
         missing_json = self._write_missing_json(tmp_path, [
             {
                 "base_accession": "GCA_000222935",
                 "missing_version": 1,
-                "new_accession": "GCA_000222935.2",
-            }
-        ])
-        update_assembly_versions(
-            missing_json=missing_json,
-            yaml_path=str(tmp_path / "config.yaml"),
-            work_dir=str(tmp_path),
-        )
-        mock_parse.assert_called_once()
-        parsed_version_data = mock_parse.call_args[1]["version_data"]
-        assert parsed_version_data["accession"] == "GCA_000222935.1"
-
-    @patch.object(backfill_module, "write_to_tsv")
-    @patch.object(backfill_module, "find_all_assembly_versions")
-    @patch.object(backfill_module, "parse_historical_version")
-    @patch.object(backfill_module, "utils")
-    def test_merges_with_existing_historical(
-        self, mock_utils, mock_parse, mock_find, mock_write, tmp_path
-    ):
-        """New rows must be merged with existing historical rows before writing."""
-        historical_tsv = tmp_path / "historical.tsv"
-        write_tsv(historical_tsv, [
-            {"genbankAccession": "GCA_000412225.1", "version_status": "superseded"}
-        ])
-        mock_utils.load_config.return_value = MagicMock(
-            meta={"file_name": str(historical_tsv)}
-        )
-        mock_find.return_value = [{"accession": "GCA_000222935.1"}]
-        mock_parse.return_value = {"genbankAccession": "GCA_000222935.1"}
-
-        missing_json = self._write_missing_json(tmp_path, [
-            {
-                "base_accession": "GCA_000222935",
-                "missing_version": 1,
-                "new_accession": "GCA_000222935.2",
-            }
-        ])
-        update_assembly_versions(
-            missing_json=missing_json,
-            yaml_path=str(tmp_path / "config.yaml"),
-            work_dir=str(tmp_path),
-        )
-        mock_write.assert_called_once()
-        written_parsed = mock_write.call_args[0][0]
-        assert "GCA_000412225.1" in written_parsed
-        assert "GCA_000222935.1" in written_parsed
-
-    @patch.object(backfill_module, "write_to_tsv")
-    @patch.object(backfill_module, "find_all_assembly_versions")
-    @patch.object(backfill_module, "utils")
-    def test_no_write_when_version_not_found_in_ftp(
-        self, mock_utils, mock_find, mock_write, tmp_path
-    ):
-        """If the FTP listing does not include the missing version, skip silently."""
-        mock_utils.load_config.return_value = MagicMock(
-            meta={"file_name": str(tmp_path / "historical.tsv")}
-        )
-        mock_find.return_value = [{"accession": "GCA_000222935.2"}]
-
-        missing_json = self._write_missing_json(tmp_path, [
-            {
-                "base_accession": "GCA_000222935",
-                "missing_version": 1,
-                "new_accession": "GCA_000222935.2",
-            }
-        ])
-        update_assembly_versions(
-            missing_json=missing_json,
-            yaml_path=str(tmp_path / "config.yaml"),
-            work_dir=str(tmp_path),
-        )
-        mock_write.assert_not_called()
-
-    @patch.object(backfill_module, "write_to_tsv")
-    @patch.object(backfill_module, "parse_historical_version")
-    @patch.object(backfill_module, "find_all_assembly_versions")
-    @patch.object(backfill_module, "utils")
-    def test_no_versions_returned_from_ftp(
-        self, mock_utils, mock_find, mock_parse, mock_write, tmp_path
-    ):
-        """If FTP returns an empty list, skip gracefully without parsing or writing."""
-        mock_utils.load_config.return_value = MagicMock(
-            meta={"file_name": str(tmp_path / "historical.tsv")}
-        )
-        mock_find.return_value = []
-
-        missing_json = self._write_missing_json(tmp_path, [
-            {
-                "base_accession": "GCA_000222935",
-                "missing_version": 1,
-                "new_accession": "GCA_000222935.2",
-            }
-        ])
-        update_assembly_versions(
-            missing_json=missing_json,
-            yaml_path=str(tmp_path / "config.yaml"),
-            work_dir=str(tmp_path),
-        )
-        mock_parse.assert_not_called()
-        mock_write.assert_not_called()
-
-    @patch.object(backfill_module, "write_to_tsv")
-    @patch.object(backfill_module, "find_all_assembly_versions")
-    @patch.object(backfill_module, "parse_historical_version")
-    @patch.object(backfill_module, "utils")
-    def test_partial_parse_failure_writes_successful_rows(
-        self, mock_utils, mock_parse, mock_find, mock_write, tmp_path
-    ):
-        """If one entry fails to parse, the successfully parsed ones are still written."""
-        mock_utils.load_config.return_value = MagicMock(
-            meta={"file_name": str(tmp_path / "historical.tsv")}
-        )
-        mock_find.side_effect = [
-            [{"accession": "GCA_000222935.1"}, {"accession": "GCA_000222935.2"}],
-            [{"accession": "GCA_000412225.1"}, {"accession": "GCA_000412225.2"}],
-        ]
-        mock_parse.side_effect = [
-            {"genbankAccession": "GCA_000222935.1"},
-            ValueError("simulated parse failure"),
-        ]
-
-        missing_json = self._write_missing_json(tmp_path, [
-            {
-                "base_accession": "GCA_000222935",
-                "missing_version": 1,
+                "new_version": 2,
                 "new_accession": "GCA_000222935.2",
             },
             {
                 "base_accession": "GCA_000412225",
                 "missing_version": 1,
+                "new_version": 2,
                 "new_accession": "GCA_000412225.2",
             },
         ])
-        update_assembly_versions(
-            missing_json=missing_json,
-            yaml_path=str(tmp_path / "config.yaml"),
-            work_dir=str(tmp_path),
-        )
-        mock_write.assert_called_once()
-        written = mock_write.call_args[0][0]
-        assert "GCA_000222935.1" in written
-        assert "GCA_000412225.1" not in written
+        update_assembly_versions(missing_json=missing_json, work_dir=str(tmp_path))
+        jsonl_path = tmp_path / "missing_assembly_versions.jsonl"
+        records = [json.loads(line) for line in jsonl_path.read_text().strip().splitlines()]
+        assert len(records) == 1
+        assert records[0]["accession"] == "GCA_000222935.2"
 
-    @patch.object(backfill_module, "write_to_tsv")
-    @patch.object(backfill_module, "find_all_assembly_versions")
-    @patch.object(backfill_module, "utils")
-    def test_empty_missing_json_no_op(
-        self, mock_utils, mock_find, mock_write, tmp_path
-    ):
-        """An empty missing_versions.json should not call write_to_tsv."""
-        mock_utils.load_config.return_value = MagicMock(
-            meta={"file_name": str(tmp_path / "historical.tsv")}
-        )
+    @patch.object(updater_module, "setup_cache_directories")
+    @patch.object(updater_module, "fetch_version_metadata")
+    def test_empty_missing_json_no_op(self, mock_fetch, mock_setup, tmp_path):
+        """An empty missing_versions.json should not call fetch_version_metadata."""
         missing_json = self._write_missing_json(tmp_path, [])
-        update_assembly_versions(
-            missing_json=missing_json,
-            yaml_path=str(tmp_path / "config.yaml"),
-            work_dir=str(tmp_path),
-        )
-        mock_write.assert_not_called()
-        mock_find.assert_not_called()
+        update_assembly_versions(missing_json=missing_json, work_dir=str(tmp_path))
+        mock_fetch.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -604,3 +501,11 @@ class TestParseAssemblyVersionsPlugin:
         assert isinstance(result, Parser)
         assert result.name == "PARSE_ASSEMBLY_VERSIONS"
         assert result.func is incremental_module.parse_assembly_versions_wrapper
+
+    def test_load_missing_versions(self, tmp_path):
+        """load_missing_versions reads a JSON file into a list of dicts."""
+        path = tmp_path / "missing.json"
+        entries = [{"base_accession": "GCA_000222935", "missing_version": 1}]
+        path.write_text(json.dumps(entries))
+        result = load_missing_versions(str(path))
+        assert result == entries
