@@ -296,7 +296,7 @@ deployments:
     entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
     parameters:
       output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_metadata.tsv.gz"
-      division: ensembl
+      division: vertebrates
       s3_path: s3://goat/resources/assembly-data/ensembl_metadata.tsv.gz
     schedules:
       - *weekly
