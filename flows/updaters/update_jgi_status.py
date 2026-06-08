@@ -172,7 +172,7 @@ def upload_s3_tsv(local_path: str, s3_path: str) -> None:
 @flow()
 def update_jgi_status(
     output_path: str,
-    s3_path: str,
+    s3_path: str = "",
     min_records: int = 0,
 ) -> bool:
     """Fetch JGI 1KFG status list and optionally upload to S3.

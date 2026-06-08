@@ -306,8 +306,8 @@ def upload_s3_file(local_path: str, s3_path: str) -> None:
 @flow()
 def update_sra_data(
     output_path: str,
-    input_path: str,
-    s3_path: str,
+    input_path: str = "",
+    s3_path: str = "",
     root_taxid: str = "2759",
     min_records: int = 0,
 ) -> bool:

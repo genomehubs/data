@@ -5,7 +5,6 @@ from flows.lib.conditional_import import emit_event, flow, task
 from flows.lib.shared_args import OUTPUT_PATH, S3_PATH, parse_args, required
 from flows.lib.utils import is_safe_path, safe_get, upload_to_s3
 
-
 UCSC_URL = "https://hgdownload.soe.ucsc.edu/hubs/UCSC_GI.assemblyHubList.txt"
 OUTPUT_FILENAME = "UCSC_GI.assemblyHubList.tsv.gz"
 
@@ -28,6 +27,8 @@ def fetch_ucsc_hub_list(output_dir: str) -> tuple[str, int]:
 
     print(f"Fetching UCSC hub list from {UCSC_URL}")
     response = safe_get(UCSC_URL, timeout=60)
+    if response is None:
+        raise RuntimeError("Failed to fetch UCSC hub list: no response received")
     response.raise_for_status()
     response.encoding = "iso-8859-1"
     text = response.text
@@ -54,7 +55,7 @@ def upload_s3_file(local_path: str, s3_path: str) -> None:
 @flow()
 def update_ucsc_assemblies(
     output_path: str,
-    s3_path: str = None,
+    s3_path: str = "",
 ) -> bool:
     """Fetch the UCSC assembly hub list and optionally upload to S3.
 

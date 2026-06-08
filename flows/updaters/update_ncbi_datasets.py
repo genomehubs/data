@@ -202,7 +202,7 @@ def compare_datasets_summary(local_path: str, s3_path: str) -> bool:
 def update_ncbi_datasets(
     root_taxid: str,
     output_path: str,
-    s3_path: str,
+    s3_path: str = "",
     data_freeze_path: Optional[str] = None,
 ) -> bool:
     line_count = fetch_ncbi_datasets_summary(root_taxid, file_path=output_path, data_freeze_path=data_freeze_path)

@@ -219,7 +219,7 @@ def upload_s3_tsv(local_path: str, s3_path: str) -> None:
 
 
 @flow()
-def update_tol_portal_status(output_path: str, s3_path: str, min_records: int) -> None:
+def update_tol_portal_status(output_path: str, s3_path: str = "", min_records: int = 0) -> None:
     """Update the ToL Portal Project Status TSV file."""
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)

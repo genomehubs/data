@@ -273,8 +273,8 @@ def upload_s3_file(local_path: str, s3_path: str) -> None:
 @flow()
 def update_refseq_organelles(
     output_path: str,
-    root_taxid: str,
-    s3_path: str,
+    root_taxid: str = "",
+    s3_path: str = "",
     min_records: int = 0,
 ) -> bool:
     """Fetch and parse RefSeq organelle data.

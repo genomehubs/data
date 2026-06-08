@@ -10,7 +10,6 @@ The companion ``update_vgp_original_status.py`` fetches the less
 frequently updated VGP GitHub YAML tracker source.
 """
 
-import csv
 import io
 import os
 
@@ -115,13 +114,16 @@ def _cleanup_headers(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _get_acronym(project_name: str) -> str:
+    """Map a free-text project name to a canonical acronym."""
+    return PROJECT_ACRONYMS.get(project_name, project_name)
+
+
 def _translate_projects(df: pd.DataFrame) -> pd.DataFrame:
     """Map free-text project names to canonical acronyms."""
     for col in ["main_project", "second_project", "project"]:
         if col in df.columns:
-            df[col] = df[col].map(
-                lambda v: PROJECT_ACRONYMS.get(v, v) if pd.notna(v) else v
-            )
+            df[col] = df[col].map(lambda v: _get_acronym(str(v)) if pd.notna(v) else v)
     return df
 
 
@@ -130,7 +132,7 @@ def _build_all_projects(df: pd.DataFrame) -> pd.DataFrame:
     df["all_projects"] = df.apply(
         lambda row: ",".join(
             sorted(
-                set(
+                {
                     x
                     for x in [
                         row.get("project"),
@@ -138,7 +140,7 @@ def _build_all_projects(df: pd.DataFrame) -> pd.DataFrame:
                         row.get("second_project"),
                     ]
                     if pd.notna(x)
-                )
+                }
             )
         ),
         axis=1,
@@ -164,19 +166,11 @@ def _expand_sequencing_status(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[df["published"] == df["all_projects"], "insdc_open"] = df["all_projects"]
     df.loc[df["insdc_open"] == df["all_projects"], "open"] = df["all_projects"]
     df.loc[df["open"] == df["all_projects"], "in_progress"] = df["all_projects"]
-    df.loc[df["data_generation"] == df["all_projects"], "in_progress"] = df[
-        "all_projects"
-    ]
+    df.loc[df["data_generation"] == df["all_projects"], "in_progress"] = df["all_projects"]
     df.loc[df["in_assembly"] == df["all_projects"], "in_progress"] = df["all_projects"]
-    df.loc[df["in_progress"] == df["all_projects"], "data_generation"] = df[
-        "all_projects"
-    ]
-    df.loc[df["in_progress"] == df["all_projects"], "sample_acquired"] = df[
-        "all_projects"
-    ]
-    df.loc[df["sample_acquired"] == df["all_projects"], "sample_collected"] = df[
-        "all_projects"
-    ]
+    df.loc[df["in_progress"] == df["all_projects"], "data_generation"] = df["all_projects"]
+    df.loc[df["in_progress"] == df["all_projects"], "sample_acquired"] = df["all_projects"]
+    df.loc[df["sample_acquired"] == df["all_projects"], "sample_collected"] = df["all_projects"]
     return df
 
 
@@ -223,6 +217,8 @@ def fetch_vgp_live_sheet(output_path: str, min_records: int = 0) -> int:
         int: Number of data rows written.
     """
     response = safe_get(VGP_SHEET_URL, timeout=120)
+    if response is None:
+        raise RuntimeError("Failed to fetch VGP live sheet: no response received")
     response.raise_for_status()
 
     df = _process_vgp_sheet(response.text)
@@ -230,9 +226,7 @@ def fetch_vgp_live_sheet(output_path: str, min_records: int = 0) -> int:
     print(f"VGP live sheet: {row_count} rows after processing")
 
     if row_count < min_records:
-        raise RuntimeError(
-            f"VGP live sheet has fewer than {min_records} rows: {row_count}"
-        )
+        raise RuntimeError(f"VGP live sheet has fewer than {min_records} rows: {row_count}")
 
     df.to_csv(output_path, sep="\t", index=False)
     print(f"Wrote {output_path}")
@@ -247,9 +241,7 @@ def upload_s3_tsv(local_path: str, s3_path: str) -> None:
 
 
 @flow()
-def update_vgp_status(
-    output_path: str, s3_path: str = None, min_records: int = 0
-) -> bool:
+def update_vgp_status(output_path: str, s3_path: str = "", min_records: int = 0) -> bool:
     """Fetch the VGP Ordinal Phase1+ live sheet and optionally upload to S3.
 
     Args:

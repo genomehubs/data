@@ -36,9 +36,7 @@ def fetch_vgp_original_tsv(
         line_count = sum(1 for _ in f)
 
     if line_count < min_lines:
-        raise RuntimeError(
-            f"VGP file {file_path} has fewer than {min_lines} lines: {line_count}"
-        )
+        raise RuntimeError(f"VGP file {file_path} has fewer than {min_lines} lines: {line_count}")
     print(f"Wrote {line_count} lines to {file_path}")
     return line_count
 
@@ -51,9 +49,7 @@ def upload_s3_tsv(local_path: str, s3_path: str) -> None:
 
 
 @flow()
-def update_vgp_original_status(
-    output_path: str, s3_path: str = None, min_records: int = 0
-) -> bool:
+def update_vgp_original_status(output_path: str, s3_path: str = "", min_records: int = 0) -> bool:
     """Fetch the VGP original status list and optionally upload to S3.
 
     This is the scarcely-updated VGP source from the GitHub YAML tracker.

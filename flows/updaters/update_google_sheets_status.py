@@ -382,7 +382,7 @@ def upload_s3_dir(local_dir: str, s3_path: str) -> None:
 def update_google_sheets_status(
     output_path: str,
     index_url: str,
-    s3_path: str,
+    s3_path: str = "",
     min_records: int = 0,
 ) -> bool:
     """Fetch all Google Sheets project status and supplementary data.

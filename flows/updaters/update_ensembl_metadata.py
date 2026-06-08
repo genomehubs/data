@@ -11,7 +11,6 @@ from flows.lib.utils import is_safe_path, safe_get, upload_to_s3
 class EnsemblDivision(Enum):
     """Supported Ensembl genome database divisions."""
 
-    ENSEMBL = "ensembl"
     FUNGI = "fungi"
     METAZOA = "metazoa"
     PLANTS = "plants"
@@ -21,7 +20,6 @@ class EnsemblDivision(Enum):
 
 
 DIVISION_URLS = {
-    EnsemblDivision.ENSEMBL: ("https://ftp.ensembl.org/pub/current/" "species_metadata_Ensembl.json"),
     EnsemblDivision.FUNGI: ("http://ftp.ensemblgenomes.org/pub/current/fungi/" "species_metadata_EnsemblFungi.json"),
     EnsemblDivision.METAZOA: (
         "http://ftp.ensemblgenomes.org/pub/current/metazoa/" "species_metadata_EnsemblMetazoa.json"
@@ -35,7 +33,6 @@ DIVISION_URLS = {
 }
 
 DIVISION_OUTPUT_NAMES = {
-    EnsemblDivision.ENSEMBL: "species_metadata_Ensembl.tsv.gz",
     EnsemblDivision.FUNGI: "species_metadata_EnsemblFungi.tsv.gz",
     EnsemblDivision.METAZOA: "species_metadata_EnsemblMetazoa.tsv.gz",
     EnsemblDivision.PLANTS: "species_metadata_EnsemblPlants.tsv.gz",
@@ -153,7 +150,7 @@ def upload_s3_file(local_path: str, s3_path: str) -> None:
 @flow()
 def update_ensembl_metadata(
     output_path: str,
-    s3_path: str,
+    s3_path: str = "",
     division: str = "vertebrates",
 ) -> bool:
     """Fetch Ensembl species metadata for a given division.

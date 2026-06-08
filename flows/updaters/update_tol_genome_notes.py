@@ -101,7 +101,7 @@ def upload_s3_tsv(local_path: str, s3_path: str) -> None:
 
 
 @flow()
-def update_tol_genome_notes(output_path: str, s3_path: str, min_records: int) -> None:
+def update_tol_genome_notes(output_path: str, s3_path: str = "", min_records: int = 0) -> bool:
     """Update the ToL genome notes TSV file."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     line_count = fetch_tol_genome_notes(output_path, min_records)

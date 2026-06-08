@@ -226,7 +226,7 @@ def upload_s3_files(output_dir: str, s3_path: str) -> None:
 @flow()
 def update_blobtoolkit(
     output_path: str,
-    s3_path: str,
+    s3_path: str = "",
     min_records: int = 0,
 ) -> bool:
     """Fetch BlobToolKit analysis data and optionally upload to S3.

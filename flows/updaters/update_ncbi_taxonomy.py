@@ -86,7 +86,7 @@ def taxonomy_is_up_to_date(local_path: str, http_path: str) -> bool:
 
 
 @flow()
-def update_ncbi_taxonomy(output_path: str) -> None:
+def update_ncbi_taxonomy(output_path: str) -> bool:
     """Fetch and the NCBI taxonomy dump.
 
     Args:

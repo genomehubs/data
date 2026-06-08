@@ -55,7 +55,7 @@ def upload_s3_tsv(local_path: str, s3_path: str) -> None:
 
 
 @flow()
-def update_nhm_status_list(output_path: str, s3_path: str, min_records: int) -> bool:
+def update_nhm_status_list(output_path: str, s3_path: str = "", min_records: int = 0) -> bool:
     """Update the NHM status list TSV file."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     line_count = fetch_nhm_tsv(output_path, min_records)
