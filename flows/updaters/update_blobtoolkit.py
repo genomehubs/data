@@ -1,9 +1,7 @@
 import contextlib
 import csv
 import gzip
-import json
 import os
-import time
 
 from flows.lib.conditional_import import emit_event, flow, task
 from flows.lib.shared_args import MIN_RECORDS, OUTPUT_PATH, S3_PATH, parse_args, required
@@ -146,14 +144,9 @@ def _describe_files(meta: dict) -> list:
                 "analysis": {
                     "name": "BlobToolKit",
                     "title": f"BlobToolKit analysis of {accession}",
-                    "description": (
-                        f"Analysis of public assembly {accession} "
-                        f"using BlobToolKit"
-                    ),
+                    "description": (f"Analysis of public assembly {accession} " f"using BlobToolKit"),
                     "source": "BlobToolKit",
-                    "source_url": (
-                        f"https://blobtoolkit.genomehubs.org/view/dataset/{dataset_id}"
-                    ),
+                    "source_url": (f"https://blobtoolkit.genomehubs.org/view/dataset/{dataset_id}"),
                 },
             }
         )
@@ -184,9 +177,7 @@ def fetch_blobtoolkit(
     print(f"Found {len(datasets)} datasets")
 
     if len(datasets) < min_records:
-        raise RuntimeError(
-            f"BlobToolKit returned fewer than {min_records} datasets: {len(datasets)}"
-        )
+        raise RuntimeError(f"BlobToolKit returned fewer than {min_records} datasets: {len(datasets)}")
 
     tsv_path = os.path.join(output_dir, "btk.tsv")
     gz_path = os.path.join(output_dir, "btk.tsv.gz")
@@ -202,9 +193,7 @@ def fetch_blobtoolkit(
         all_files.extend(files)
 
     with open(tsv_path, "w", newline="") as f:
-        writer = csv.DictWriter(
-            f, fieldnames=TSV_FIELDNAMES, delimiter="\t", lineterminator="\n"
-        )
+        writer = csv.DictWriter(f, fieldnames=TSV_FIELDNAMES, delimiter="\t", lineterminator="\n")
         writer.writeheader()
         for row in all_rows:
             writer.writerow(row)
@@ -237,7 +226,7 @@ def upload_s3_files(output_dir: str, s3_path: str) -> None:
 @flow()
 def update_blobtoolkit(
     output_path: str,
-    s3_path: str = None,
+    s3_path: str,
     min_records: int = 0,
 ) -> bool:
     """Fetch BlobToolKit analysis data and optionally upload to S3.
@@ -254,14 +243,17 @@ def update_blobtoolkit(
         raise ValueError(f"Unsafe output path: {output_path}")
 
     resolved_path = os.path.abspath(output_path)
+    filename = "btk.tsv.gz"
+    if ".tsv" in resolved_path:
+        filename = os.path.basename(resolved_path)
+        resolved_path = os.path.dirname(resolved_path)
     os.makedirs(resolved_path, exist_ok=True)
 
-    row_count, file_count = fetch_blobtoolkit(
-        resolved_path, min_records=min_records
-    )
+    row_count, file_count = fetch_blobtoolkit(resolved_path, min_records=min_records)
 
     if s3_path:
-        upload_s3_files(resolved_path, s3_path)
+        upload_s3_files(f"{resolved_path}/{filename}", s3_path)
+        upload_s3_files(f"{resolved_path}/btk.files.yaml", s3_path)
 
     emit_event(
         event="update.blobtoolkit.finished",

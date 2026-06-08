@@ -112,13 +112,16 @@ def copy_yaml_files(yaml_path: str, config: Config, work_dir: str) -> None:
     # Copy any dependencies to the working directory
     if "needs" in config.config["file"]:
         source_dir = os.path.dirname(yaml_path)
-        for file in config.config["file"]["needs"]:
+        needs = config.config["file"]["needs"]
+        if not isinstance(needs, list):
+            needs = [needs]
+        for file in needs:
             file_path = os.path.join(source_dir, file)
             shutil.copy(file_path, work_dir)
 
 
 @flow()
-def fetch_previous_file_pair(yaml_path: str, s3_path: str, work_dir: str) -> None:
+def fetch_previous_file_pair(yaml_path: str, s3_path: str, work_dir: str) -> bool:
     """
     Fetch the previous YAML/TSV files and compare headers.
 
@@ -128,7 +131,7 @@ def fetch_previous_file_pair(yaml_path: str, s3_path: str, work_dir: str) -> Non
         work_dir (str): Path to the working directory.
     """
     config = utils.load_config(yaml_path)
-    (local_file, remote_file) = get_filenames(config, s3_path, work_dir)
+    local_file, remote_file = get_filenames(config, s3_path, work_dir)
     line_count = fetch_tsv_file(remote_file, local_file)
     copy_yaml_files(yaml_path, config, work_dir)
     status = compare_headers(config, local_file)

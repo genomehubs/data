@@ -15,17 +15,16 @@ Outputs are per-project expanded TSV files matching legacy format.
 import csv
 import io
 import os
-import re
 
 import numpy as np
 import pandas as pd
 
 from flows.lib.conditional_import import emit_event, flow, task
 from flows.lib.shared_args import (
+    INDEX_URL,
     MIN_RECORDS,
     OUTPUT_PATH,
     S3_PATH,
-    default,
     parse_args,
     required,
 )
@@ -54,12 +53,12 @@ CNGB_URL = (
 # ---------------------------------------------------------------------------
 
 
-def _open_google_spreadsheet(
-    acronym: str, url: str, header_index: str
-) -> pd.DataFrame:
+def _open_google_spreadsheet(acronym: str, url: str, header_index: int) -> pd.DataFrame:
     """Download a published Google Sheet as TSV and return a DataFrame."""
     encodings = ["utf-8", "ISO-8859-1", "latin1"]
     response = safe_get(url, timeout=120)
+    if response is None:
+        raise RuntimeError(f"Failed to fetch sheet for {acronym}: no response received")
     response.raise_for_status()
 
     df = None
@@ -109,9 +108,14 @@ def _cleanup_headers(df: pd.DataFrame) -> pd.DataFrame:
 def _create_mandatory_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Ensure mandatory columns exist."""
     for col in [
-        "ncbi_taxon_id", "species", "family", "synonym",
-        "publication_id", "contributing_project_lab",
-        "target_list_status", "sequencing_status",
+        "ncbi_taxon_id",
+        "species",
+        "family",
+        "synonym",
+        "publication_id",
+        "contributing_project_lab",
+        "target_list_status",
+        "sequencing_status",
     ]:
         if col not in df.columns:
             df[col] = None
@@ -126,14 +130,10 @@ def _expand_target_status(df: pd.DataFrame, acronym: str) -> pd.DataFrame:
     df["long_list"] = acronym
 
     lower = acronym.lower()
-    fr_mask = df["target_list_status"].isin(
-        [f"{lower}_family_representative", "family_representative"]
-    )
+    fr_mask = df["target_list_status"].isin([f"{lower}_family_representative", "family_representative"])
     df.loc[fr_mask, "family_representative"] = acronym
 
-    op_mask = df["target_list_status"].isin(
-        [f"{lower}_other_priority", "other_priority"]
-    )
+    op_mask = df["target_list_status"].isin([f"{lower}_other_priority", "other_priority"])
     df.loc[op_mask, "other_priority"] = acronym
     return df
 
@@ -158,9 +158,15 @@ def _reduce_sequencing_status(df: pd.DataFrame, acronym: str) -> pd.DataFrame:
 def _create_status_columns(df: pd.DataFrame, acronym: str) -> pd.DataFrame:
     """Create and populate per-status columns."""
     statuses = [
-        "sample_collected", "sample_acquired", "in_progress",
-        "data_generation", "in_assembly", "insdc_submitted",
-        "open", "insdc_open", "published",
+        "sample_collected",
+        "sample_acquired",
+        "in_progress",
+        "data_generation",
+        "in_assembly",
+        "insdc_submitted",
+        "open",
+        "insdc_open",
+        "published",
     ]
     for s in statuses:
         if s not in df.columns:
@@ -182,7 +188,7 @@ def _expand_sequencing_status(df: pd.DataFrame, acronym: str) -> pd.DataFrame:
     return df
 
 
-def _process_project(acronym: str, url: str, header_row: str) -> pd.DataFrame:
+def _process_project(acronym: str, url: str, header_row: int) -> pd.DataFrame:
     """Full processing pipeline for one project status sheet."""
     df = _open_google_spreadsheet(acronym, url, header_row)
     df = _general_cleanup(df)
@@ -203,6 +209,8 @@ def _process_project(acronym: str, url: str, header_row: str) -> pd.DataFrame:
 def _fetch_dtol_plant_genome_sizes(output_path: str) -> int:
     """Fetch DTOL Plant Genome Size Estimates from Kew."""
     response = safe_get(DTOL_PLANT_GENOME_SIZE_URL, timeout=120)
+    if response is None:
+        raise RuntimeError("Failed to fetch DTOL Plant Genome Size Estimates: no response received")
     response.raise_for_status()
     df = pd.read_csv(io.StringIO(response.text), delimiter="\t", dtype=str)
     df.columns = (
@@ -212,7 +220,7 @@ def _fetch_dtol_plant_genome_sizes(output_path: str) -> int:
         .str.replace(r"\)", "", regex=True)
         .str.lower()
     )
-    df.dropna(how="all", axis=0, inplace=True)
+    df = df.dropna(how="all", axis=0)
     df = df[df["genus"].notna() & (df.get("project", pd.Series()) == "DTOL")]
     df["primary"] = "1"
     df.to_csv(output_path, sep="\t", index=False)
@@ -222,6 +230,8 @@ def _fetch_dtol_plant_genome_sizes(output_path: str) -> int:
 def _fetch_dtol_tolqc_status(output_path: str) -> int:
     """Fetch DTOL assembly informatics status (kmer draft)."""
     response = safe_get(DTOL_TOLQC_STATUS_URL, timeout=120)
+    if response is None:
+        raise RuntimeError("Failed to fetch DTOL assembly informatics status: no response received")
     response.raise_for_status()
     df = pd.read_csv(
         io.StringIO(response.text),
@@ -237,7 +247,7 @@ def _fetch_dtol_tolqc_status(output_path: str) -> int:
         .str.replace(r"\)", "", regex=True)
         .str.lower()
     )
-    df.dropna(how="all", axis=0, inplace=True)
+    df = df.dropna(how="all", axis=0)
     df = df[df["taxon"].notna()]
     df = df[df["accession"].isna() | ~df["accession"].str.startswith("GCA_", na=False)]
     df = df[~df["statussummary"].str.startswith("9", na=False)]
@@ -253,6 +263,8 @@ def _fetch_dtol_tolqc_status(output_path: str) -> int:
 def _fetch_cngb(output_path: str) -> int:
     """Fetch CNGB project status sheet."""
     response = safe_get(CNGB_URL, timeout=120)
+    if response is None:
+        raise RuntimeError("Failed to fetch CNGB project status sheet: no response received")
     response.raise_for_status()
     df = pd.read_csv(
         io.StringIO(response.text),
@@ -260,7 +272,7 @@ def _fetch_cngb(output_path: str) -> int:
         dtype=str,
         na_values=["NA", "missing", "", "NULL"],
     )
-    df.dropna(how="all", axis=0, inplace=True)
+    df = df.dropna(how="all", axis=0)
     df.to_csv(output_path, sep="\t", index=False)
     return len(df)
 
@@ -271,9 +283,7 @@ def _fetch_cngb(output_path: str) -> int:
 
 
 @task(retries=2, retry_delay_seconds=30, log_prints=True)
-def fetch_project_status_sheets(
-    index_url: str, output_dir: str
-) -> dict:
+def fetch_project_status_sheets(index_url: str, output_dir: str) -> dict:
     """Fetch all project status sheets listed in the private index TSV.
 
     Args:
@@ -285,6 +295,8 @@ def fetch_project_status_sheets(
         dict: Mapping of project acronym to row count.
     """
     response = safe_get(index_url, timeout=60)
+    if response is None:
+        raise RuntimeError("Failed to fetch project status sheets index: no response received")
     response.raise_for_status()
 
     index_df = pd.read_csv(
@@ -330,17 +342,13 @@ def fetch_other_sheets(output_dir: str) -> dict:
 
     plant_path = os.path.join(output_dir, "DTOL_Plant_Genome_Size_Estimates.tsv")
     try:
-        results["DTOL_Plant_Genome_Size_Estimates"] = _fetch_dtol_plant_genome_sizes(
-            plant_path
-        )
+        results["DTOL_Plant_Genome_Size_Estimates"] = _fetch_dtol_plant_genome_sizes(plant_path)
         print(f"Plant genome sizes: {results['DTOL_Plant_Genome_Size_Estimates']} rows")
     except Exception as exc:
         print(f"Plant genome sizes: FAILED — {exc}")
         results["DTOL_Plant_Genome_Size_Estimates"] = 0
 
-    tolqc_path = os.path.join(
-        output_dir, "DTOL_assembly_informatics_status_kmer_draft.tsv"
-    )
+    tolqc_path = os.path.join(output_dir, "DTOL_assembly_informatics_status_kmer_draft.tsv")
     try:
         results["DTOL_tolqc_status"] = _fetch_dtol_tolqc_status(tolqc_path)
         print(f"DTOL tolqc status: {results['DTOL_tolqc_status']} rows")
@@ -373,8 +381,8 @@ def upload_s3_dir(local_dir: str, s3_path: str) -> None:
 @flow()
 def update_google_sheets_status(
     output_path: str,
-    index_url: str = None,
-    s3_path: str = None,
+    index_url: str,
+    s3_path: str,
     min_records: int = 0,
 ) -> bool:
     """Fetch all Google Sheets project status and supplementary data.
@@ -410,9 +418,7 @@ def update_google_sheets_status(
     total += sum(other_results.values())
 
     if total < min_records:
-        raise RuntimeError(
-            f"Google Sheets: fewer than {min_records} total records: {total}"
-        )
+        raise RuntimeError(f"Google Sheets: fewer than {min_records} total records: {total}")
 
     if s3_path:
         upload_s3_dir(resolved_path, s3_path)
@@ -433,15 +439,8 @@ def update_google_sheets_status(
 
 
 if __name__ == "__main__":
-    INDEX_URL = {
-        "flags": ["--index_url"],
-        "keys": {
-            "help": "URL to the private index TSV listing project sheets.",
-            "type": str,
-        },
-    }
     args = parse_args(
-        [required(OUTPUT_PATH), INDEX_URL, S3_PATH, MIN_RECORDS],
+        [required(OUTPUT_PATH), required(INDEX_URL), S3_PATH, MIN_RECORDS],
         "Fetch project status data from Google Sheets.",
     )
     update_google_sheets_status(**vars(args))

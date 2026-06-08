@@ -53,13 +53,13 @@ def _exchange_token(offline_token: str) -> str:
     """
     url = f"{JGI_BASE_URL}/exchange?offlineToken={offline_token}"
     response = safe_get(url, timeout=30)
+    if response is None:
+        raise RuntimeError("JGI token exchange failed: no response received")
     if response.status_code != 200:
         raise RuntimeError(
-            f"JGI token exchange failed: HTTP {response.status_code} — "
-            f"check that JGI_OFFLINE_TOKEN is valid"
+            f"JGI token exchange failed: HTTP {response.status_code} — " f"check that JGI_OFFLINE_TOKEN is valid"
         )
-    token = response.content.decode().strip()
-    if not token:
+    if not (token := response.content.decode().strip()):
         raise RuntimeError("JGI token exchange returned empty access token")
     return token
 
@@ -76,6 +76,12 @@ def _fetch_organisms(access_token: str) -> dict:
     headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     url = f"{JGI_BASE_URL}/api/v1/organisms?studyGoldId={JGI_STUDY_ID}"
     response = safe_get(url, headers=headers, timeout=120)
+    if response is None:
+        raise RuntimeError("JGI organism fetch failed: no response received")
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"JGI organism fetch failed: HTTP {response.status_code} — " f"check that JGI_OFFLINE_TOKEN is valid"
+        )
     response.raise_for_status()
     organisms = response.json()
     return {org["organismGoldId"]: org.get("ncbiTaxId", "") for org in organisms}
@@ -93,6 +99,12 @@ def _fetch_projects(access_token: str) -> list:
     headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     url = f"{JGI_BASE_URL}/api/v1/projects?studyGoldId={JGI_STUDY_ID}"
     response = safe_get(url, headers=headers, timeout=120)
+    if response is None:
+        raise RuntimeError("JGI project fetch failed: no response received")
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"JGI project fetch failed: HTTP {response.status_code} — " f"check that JGI_OFFLINE_TOKEN is valid"
+        )
     response.raise_for_status()
     return response.json()
 
@@ -115,8 +127,7 @@ def fetch_jgi_tsv(file_path: str, min_lines: int = 1) -> int:
     offline_token = os.environ.get("JGI_OFFLINE_TOKEN")
     if not offline_token:
         raise RuntimeError(
-            "JGI_OFFLINE_TOKEN environment variable is not set — "
-            "cannot authenticate with JGI GOLD API"
+            "JGI_OFFLINE_TOKEN environment variable is not set — " "cannot authenticate with JGI GOLD API"
         )
 
     print("Exchanging JGI offline token for access token")
@@ -146,9 +157,7 @@ def fetch_jgi_tsv(file_path: str, min_lines: int = 1) -> int:
 
     line_count = row_count + 1  # include header
     if row_count < min_lines:
-        raise RuntimeError(
-            f"JGI file has fewer than {min_lines} data rows: {row_count}"
-        )
+        raise RuntimeError(f"JGI file has fewer than {min_lines} data rows: {row_count}")
     print(f"Wrote {row_count} WGS projects to {file_path}")
     return line_count
 
@@ -163,7 +172,7 @@ def upload_s3_tsv(local_path: str, s3_path: str) -> None:
 @flow()
 def update_jgi_status(
     output_path: str,
-    s3_path: str = None,
+    s3_path: str,
     min_records: int = 0,
 ) -> bool:
     """Fetch JGI 1KFG status list and optionally upload to S3.

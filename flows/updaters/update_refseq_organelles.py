@@ -12,7 +12,6 @@ from flows.lib.shared_args import (
     OUTPUT_PATH,
     ROOT_TAXID,
     S3_PATH,
-    default,
     parse_args,
     required,
 )
@@ -39,9 +38,18 @@ ORGANELLE_FIELDNAMES = [
 ]
 
 MONTHS = {
-    "JAN": "01", "FEB": "02", "MAR": "03", "APR": "04",
-    "MAY": "05", "JUN": "06", "JUL": "07", "AUG": "08",
-    "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12",
+    "JAN": "01",
+    "FEB": "02",
+    "MAR": "03",
+    "APR": "04",
+    "MAY": "05",
+    "JUN": "06",
+    "JUL": "07",
+    "AUG": "08",
+    "SEP": "09",
+    "OCT": "10",
+    "NOV": "11",
+    "DEC": "12",
 }
 
 
@@ -65,12 +73,10 @@ def _refseq_listing(collection: str) -> list:
     pattern = re.compile(r"(\w+\.\d+\.genomic\.gbff\.gz)")
     url = f"{REFSEQ_FTP}/{collection}"
     response = safe_get(url, timeout=120)
+    if response is None:
+        raise RuntimeError(f"Failed to fetch RefSeq listing for {collection}: no response received")
     response.raise_for_status()
-    return [
-        f"{url}/{match[1]}"
-        for line in response.text.split("\n")
-        if (match := pattern.search(line))
-    ]
+    return [f"{url}/{match[1]}" for line in response.text.split("\n") if (match := pattern.search(line))]
 
 
 def _parse_features(entry, fields: dict) -> None:
@@ -95,14 +101,12 @@ def _parse_references(entry, fields: dict) -> None:
         if ref.journal.startswith("Submitted"):
             if "sourceAuthor" in fields:
                 continue
-            match = submitted_re.search(ref.journal)
-            if match:
+            if match := submitted_re.search(ref.journal):
                 fields["sourceYear"] = match[1]
         elif "sourceAuthor" in fields:
             continue
         else:
-            match = published_re.search(ref.journal)
-            if match:
+            if match := published_re.search(ref.journal):
                 fields["sourceYear"] = match[1]
             if ref.title:
                 fields["sourceTitle"] = ref.title
@@ -149,7 +153,7 @@ def _parse_sequence(entry, fields: dict) -> bool:
     return True
 
 
-def _parse_flatfile(flatfile_path: str, organelle: str, root_taxon: str = None) -> list:
+def _parse_flatfile(flatfile_path: str, organelle: str, root_taxon: str) -> list:
     """Parse a single GenBank flatfile for organelle sequences.
 
     Args:
@@ -174,8 +178,7 @@ def _parse_flatfile(flatfile_path: str, organelle: str, root_taxon: str = None) 
             fields = {"id": entry.id, "organelle": organelle}
             comment = entry.annotations.get("comment", "")
             if comment:
-                match = comment_re.search(comment)
-                if match:
+                if match := comment_re.search(comment):
                     fields["genbankAccession"] = match[1]
                 else:
                     continue
@@ -195,8 +198,8 @@ def _parse_flatfile(flatfile_path: str, organelle: str, root_taxon: str = None) 
 @task(retries=2, retry_delay_seconds=30, log_prints=True)
 def fetch_and_parse_organelles(
     output_path: str,
-    organelles: list = None,
-    root_taxon: str = None,
+    organelles: list,
+    root_taxon: str,
 ) -> int:
     """Fetch RefSeq organelle data and parse to gzipped TSV.
 
@@ -211,7 +214,7 @@ def fetch_and_parse_organelles(
     Returns:
         int: Number of rows written.
     """
-    if organelles is None:
+    if not organelles:
         organelles = ["mitochondrion", "plastid"]
 
     all_rows = []
@@ -223,6 +226,8 @@ def fetch_and_parse_organelles(
         for url in listing:
             print(f"Downloading {url}")
             response = safe_get(url, timeout=600)
+            if response is None:
+                raise RuntimeError(f"Failed to download {url}: no response received")
             response.raise_for_status()
 
             with tempfile.NamedTemporaryFile(suffix=".gbff.gz", delete=False) as tmp:
@@ -268,8 +273,8 @@ def upload_s3_file(local_path: str, s3_path: str) -> None:
 @flow()
 def update_refseq_organelles(
     output_path: str,
-    root_taxid: str = None,
-    s3_path: str = None,
+    root_taxid: str,
+    s3_path: str,
     min_records: int = 0,
 ) -> bool:
     """Fetch and parse RefSeq organelle data.
@@ -289,13 +294,11 @@ def update_refseq_organelles(
     os.makedirs(os.path.dirname(resolved_path), exist_ok=True)
 
     row_count = fetch_and_parse_organelles(
-        resolved_path, root_taxon=root_taxid
+        resolved_path, organelles=["mitochondrion", "plastid"], root_taxon=root_taxid
     )
 
     if row_count < min_records:
-        raise RuntimeError(
-            f"RefSeq organelles: fewer than {min_records} records: {row_count}"
-        )
+        raise RuntimeError(f"RefSeq organelles: fewer than {min_records} records: {row_count}")
 
     if s3_path:
         upload_s3_file(output_path, s3_path)

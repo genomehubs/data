@@ -42,9 +42,7 @@ def fetch_ott_taxonomy(
 
     # Find the extracted subdirectory (should start with 'ott')
     extracted_dirs = [
-        d
-        for d in os.listdir(local_path)
-        if os.path.isdir(os.path.join(local_path, d)) and d.startswith("ott")
+        d for d in os.listdir(local_path) if os.path.isdir(os.path.join(local_path, d)) and d.startswith("ott")
     ]
     if not extracted_dirs:
         raise RuntimeError("No extracted ott directory found.")
@@ -111,28 +109,30 @@ def set_ott_url() -> str:
 
     # Extract required fields
     source = ott_json.get("source", "")
-    name = ott_json.get("name", "")
-    version = ott_json.get("version", "")
 
     # Replace "draft" with "." in source to get OTT_VERSION
     ott_version = source.replace("draft", ".")
-    ott_major_version = f"{name}{version}"
 
-    return (
-        f"https://files.opentreeoflife.org/ott/"
-        f"{ott_major_version}/{ott_version}.tgz"
-    )
+    # may need to restore this if ott switch back to the major version URL structure, but for now we want the full version in the URL
+    # name = ott_json.get("name", "")
+    # version = ott_json.get("version", "")
+    # ott_major_version = f"{name}{version}"
+
+    # return (
+    #     f"https://files.opentreeoflife.org/ott/"
+    #     f"{ott_major_version}/{ott_version}.tgz"
+    # )
+    return f"https://files.opentreeoflife.org/ott/{ott_version}/{ott_version}.tar.gz"
 
 
 @flow()
-def update_ott_taxonomy(output_path: str) -> None:
+def update_ott_taxonomy(output_path: str) -> bool:
     """Fetch the OTT taxonomy file.
 
     Args:
         output_path (str): Path to save the taxonomy dump.
     """
     http_path = set_ott_url()
-    status = None
     complete = False
     if ott_taxonomy_is_up_to_date(output_path, http_path):
         status = True

@@ -358,7 +358,6 @@ deployments:
     parameters:
       output_path: "/home/ubuntu/tmp/test/assembly-data/ucsc_assemblies.tsv"
       s3_path: s3://goat/resources/assembly-data/ucsc_assemblies.tsv
-      min_records: 100
     schedules:
       - *weekly
     work_pool: *goat_data_work_pool
@@ -371,7 +370,12 @@ deployments:
       s3_path: s3://goat/resources/assembly-data/jgi_1kfg_status.tsv
     schedules:
       - *weekly
-    work_pool: *goat_data_work_pool
+    work_pool:
+      name: goat-data
+      work_queue_name: default
+      job_variables:
+        env:
+          JGI_OFFLINE_TOKEN: "{{ $JGI_OFFLINE_TOKEN }}"
 
   - name: update-sra-data
     # Fetch SRA data via NCBI E-utilities
@@ -381,16 +385,19 @@ deployments:
       s3_path: s3://goat/resources/assembly-data/sra_data.tsv.gz
     schedules:
       - *weekly
-    work_pool: *goat_data_work_pool
+    work_pool:
+      name: goat-data
+      work_queue_name: default
+      job_variables:
+        env:
+          NCBI_API_KEY: "{{ $NCBI_API_KEY }}"
 
   - name: update-blobtoolkit
     # Fetch BlobToolKit analysis data via API
     entrypoint: flows/updaters/update_blobtoolkit.py:update_blobtoolkit
     parameters:
       output_path: "/home/ubuntu/tmp/test/assembly-data/btk.tsv.gz"
-      files_output_path: "/home/ubuntu/tmp/test/assembly-data/btk.files.yaml"
       s3_path: s3://goat/resources/assembly-data/btk.tsv.gz
-      s3_files_path: s3://goat/resources/assembly-data/btk.files.yaml
     schedules:
       - *weekly
     work_pool: *goat_data_work_pool
@@ -410,6 +417,8 @@ deployments:
     entrypoint: flows/updaters/update_google_sheets_status.py:update_google_sheets_status
     parameters:
       output_path: "/home/ubuntu/tmp/test/status-lists/google-sheets"
+      # This needs to be set to the URL of a TSV file containing the list of Google Sheets to fetch
+      index_url: ""
       s3_path: s3://goat/resources/status-lists/google-sheets/
     schedules:
       - *daily

@@ -1,17 +1,17 @@
 import csv
 import gzip
-import json
 import os
 from enum import Enum
 
 from flows.lib.conditional_import import emit_event, flow, task
-from flows.lib.shared_args import OUTPUT_PATH, S3_PATH, parse_args, required
+from flows.lib.shared_args import DIVISION, OUTPUT_PATH, S3_PATH, parse_args, required
 from flows.lib.utils import is_safe_path, safe_get, upload_to_s3
 
 
 class EnsemblDivision(Enum):
     """Supported Ensembl genome database divisions."""
 
+    ENSEMBL = "ensembl"
     FUNGI = "fungi"
     METAZOA = "metazoa"
     PLANTS = "plants"
@@ -21,33 +21,21 @@ class EnsemblDivision(Enum):
 
 
 DIVISION_URLS = {
-    EnsemblDivision.FUNGI: (
-        "http://ftp.ensemblgenomes.org/pub/current/fungi/"
-        "species_metadata_EnsemblFungi.json"
-    ),
+    EnsemblDivision.ENSEMBL: ("https://ftp.ensembl.org/pub/current/" "species_metadata_Ensembl.json"),
+    EnsemblDivision.FUNGI: ("http://ftp.ensemblgenomes.org/pub/current/fungi/" "species_metadata_EnsemblFungi.json"),
     EnsemblDivision.METAZOA: (
-        "http://ftp.ensemblgenomes.org/pub/current/metazoa/"
-        "species_metadata_EnsemblMetazoa.json"
+        "http://ftp.ensemblgenomes.org/pub/current/metazoa/" "species_metadata_EnsemblMetazoa.json"
     ),
-    EnsemblDivision.PLANTS: (
-        "http://ftp.ensemblgenomes.org/pub/current/plants/"
-        "species_metadata_EnsemblPlants.json"
-    ),
+    EnsemblDivision.PLANTS: ("http://ftp.ensemblgenomes.org/pub/current/plants/" "species_metadata_EnsemblPlants.json"),
     EnsemblDivision.PROTISTS: (
-        "http://ftp.ensemblgenomes.org/pub/current/protists/"
-        "species_metadata_EnsemblProtists.json"
+        "http://ftp.ensemblgenomes.org/pub/current/protists/" "species_metadata_EnsemblProtists.json"
     ),
-    EnsemblDivision.RAPID: (
-        "https://ftp.ensembl.org/pub/rapid-release/"
-        "species_metadata.json"
-    ),
-    EnsemblDivision.VERTEBRATES: (
-        "https://ftp.ensembl.org/pub/current/"
-        "species_metadata_EnsemblVertebrates.json"
-    ),
+    EnsemblDivision.RAPID: ("https://ftp.ensembl.org/pub/rapid-release/" "species_metadata.json"),
+    EnsemblDivision.VERTEBRATES: ("https://ftp.ensembl.org/pub/current/" "species_metadata_EnsemblVertebrates.json"),
 }
 
 DIVISION_OUTPUT_NAMES = {
+    EnsemblDivision.ENSEMBL: "species_metadata_Ensembl.tsv.gz",
     EnsemblDivision.FUNGI: "species_metadata_EnsemblFungi.tsv.gz",
     EnsemblDivision.METAZOA: "species_metadata_EnsemblMetazoa.tsv.gz",
     EnsemblDivision.PLANTS: "species_metadata_EnsemblPlants.tsv.gz",
@@ -76,7 +64,6 @@ def _extract_fields(record: dict, division: EnsemblDivision) -> list:
         name = record.get("ensembl_production_name", "")
         release_date = record.get("release_date", "")
         strain = record.get("strain", "")
-        taxonomy_id = str(record.get("taxonomy_id", ""))
     elif division == EnsemblDivision.VERTEBRATES:
         assembly = record.get("assembly", {})
         organism = record.get("organism", {})
@@ -84,16 +71,15 @@ def _extract_fields(record: dict, division: EnsemblDivision) -> list:
         name = organism.get("url_name", "")
         release_date = record.get("release_date", "")
         strain = organism.get("strain", "")
-        taxonomy_id = str(record.get("taxonomy_id", ""))
     else:
         organism = record.get("organism", {})
         accession = record.get("assembly_accession", "")
         name = organism.get("url_name", "")
         release_date = record.get("release_date", "")
         strain = organism.get("strain", "")
-        taxonomy_id = str(record.get("taxonomy_id", ""))
+    taxonomy_id = str(record.get("taxonomy_id", ""))
     if not accession:
-        return None
+        return []
     return [accession, name, release_date, strain, taxonomy_id]
 
 
@@ -126,13 +112,18 @@ def fetch_ensembl_division(
 
     print(f"Fetching Ensembl {division.value} from {url}")
     response = safe_get(url, timeout=600)
+    if response is None:
+        raise RuntimeError(f"Failed to fetch Ensembl {division.value}: no response received")
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Failed to fetch Ensembl {division.value}: HTTP {response.status_code} — "
+            f"check the URL and your network connection"
+        )
     response.raise_for_status()
 
     records = response.json()
     if not isinstance(records, list):
-        raise ValueError(
-            f"Expected JSON array from {url}, got {type(records).__name__}"
-        )
+        raise ValueError(f"Expected JSON array from {url}, got {type(records).__name__}")
 
     tsv_path = output_path.removesuffix(".gz")
     row_count = 0
@@ -140,8 +131,7 @@ def fetch_ensembl_division(
         writer = csv.writer(f, delimiter="\t", lineterminator="\n")
         writer.writerow(TSV_HEADERS)
         for record in records:
-            row = _extract_fields(record, division)
-            if row is not None:
+            if row := _extract_fields(record, division):
                 writer.writerow(row)
                 row_count += 1
 
@@ -163,16 +153,16 @@ def upload_s3_file(local_path: str, s3_path: str) -> None:
 @flow()
 def update_ensembl_metadata(
     output_path: str,
+    s3_path: str,
     division: str = "vertebrates",
-    s3_path: str = None,
 ) -> bool:
     """Fetch Ensembl species metadata for a given division.
 
     Args:
         output_path (str): Directory to write output files.
+        s3_path (str): Optional S3 directory to upload the result.
         division (str): Ensembl division name (fungi, metazoa, plants,
             protists, rapid, vertebrates).
-        s3_path (str): Optional S3 directory to upload the result.
 
     Returns:
         bool: True on success.
@@ -204,14 +194,6 @@ def update_ensembl_metadata(
 
 
 if __name__ == "__main__":
-    DIVISION = {
-        "flags": ["--division"],
-        "keys": {
-            "help": "Ensembl division (fungi, metazoa, plants, protists, rapid, vertebrates).",
-            "type": str,
-            "default": "vertebrates",
-        },
-    }
     args = parse_args(
         [required(OUTPUT_PATH), S3_PATH, DIVISION],
         "Fetch Ensembl species metadata for a given division.",

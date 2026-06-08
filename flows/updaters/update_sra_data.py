@@ -19,7 +19,6 @@ from flows.lib.shared_args import (
 )
 from flows.lib.utils import is_safe_path, run_quoted, upload_to_s3
 
-
 SRA_FIELDNAMES = [
     "taxon_id",
     "sra_accession",
@@ -84,9 +83,7 @@ def _read_runs(node, obj):
     if "runs" not in obj:
         obj["runs"] = []
     for child in node:
-        obj["runs"].append(
-            {"accession": child.get("acc"), "reads": child.get("total_spots", "0")}
-        )
+        obj["runs"].append({"accession": child.get("acc"), "reads": child.get("total_spots", "0")})
 
 
 def parse_sra_xml(xml_file: str) -> list:
@@ -122,7 +119,7 @@ def parse_sra_xml(xml_file: str) -> list:
     return rows
 
 
-def group_by_taxon(rows: list, grouped: dict = None) -> list:
+def group_by_taxon(rows: list, grouped: dict) -> list:
     """Group SRA runs by taxon, keeping the 10 most recent per taxon.
 
     Args:
@@ -231,20 +228,19 @@ def fetch_sra_xml(
     Returns:
         str: Path to the written XML file.
     """
-    api_key = os.environ.get("NCBI_API_KEY", "")
     max_date = _get_yesterday()
 
     query = f"(txid{root_taxid}[organism:exp])"
     esearch_cmd = [
-        "esearch", "-db", "sra", "-query", query,
+        "esearch",
+        "-db",
+        "sra",
+        "-query",
+        query,
     ]
-    if api_key:
-        esearch_cmd.extend(["-api_key", api_key])
     esearch_cmd.extend(["-mindate", min_date, "-maxdate", max_date])
 
     efetch_cmd = ["efetch", "-db", "sra", "-format", "docsum"]
-    if api_key:
-        efetch_cmd.extend(["-api_key", api_key])
 
     print(f"Running esearch | efetch for taxid {root_taxid} ({min_date} to {max_date})")
     esearch = run_quoted(esearch_cmd, capture_output=True, text=True, timeout=300)
@@ -252,9 +248,7 @@ def fetch_sra_xml(
         raise RuntimeError(f"esearch failed: {esearch.stderr}")
 
     with open(output_xml, "w") as f:
-        efetch = run_quoted(
-            efetch_cmd, input=esearch.stdout, capture_output=True, text=True, timeout=600
-        )
+        efetch = run_quoted(efetch_cmd, input=esearch.stdout, capture_output=True, text=True, timeout=600)
         if efetch.returncode != 0:
             raise RuntimeError(f"efetch failed: {efetch.stderr}")
         f.write(efetch.stdout)
@@ -267,7 +261,7 @@ def fetch_sra_xml(
 def parse_and_write_sra(
     xml_path: str,
     output_path: str,
-    previous_path: str = None,
+    previous_path: str,
 ) -> int:
     """Parse SRA XML and write grouped TSV.
 
@@ -288,9 +282,7 @@ def parse_and_write_sra(
 
     tsv_path = output_path.removesuffix(".gz")
     with open(tsv_path, "w", newline="") as f:
-        writer = csv.DictWriter(
-            f, fieldnames=SRA_FIELDNAMES, delimiter="\t", lineterminator="\n"
-        )
+        writer = csv.DictWriter(f, fieldnames=SRA_FIELDNAMES, delimiter="\t", lineterminator="\n")
         writer.writeheader()
         for row in grouped_rows:
             writer.writerow(row)
@@ -314,9 +306,9 @@ def upload_s3_file(local_path: str, s3_path: str) -> None:
 @flow()
 def update_sra_data(
     output_path: str,
-    input_path: str = None,
+    input_path: str,
+    s3_path: str,
     root_taxid: str = "2759",
-    s3_path: str = None,
     min_records: int = 0,
 ) -> bool:
     """Fetch and parse SRA data, writing grouped TSV output.
@@ -345,12 +337,10 @@ def update_sra_data(
         xml_path = f"{resolved_path}.xml"
         fetch_sra_xml(xml_path, root_taxid=root_taxid)
 
-    row_count = parse_and_write_sra(xml_path, resolved_path)
+    row_count = parse_and_write_sra(xml_path, resolved_path, previous_path=resolved_path)
 
     if row_count < min_records:
-        raise RuntimeError(
-            f"SRA output has fewer than {min_records} taxa: {row_count}"
-        )
+        raise RuntimeError(f"SRA output has fewer than {min_records} taxa: {row_count}")
 
     if s3_path:
         upload_s3_file(output_path, s3_path)
