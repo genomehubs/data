@@ -122,7 +122,7 @@ def set_ott_url() -> str:
     #     f"https://files.opentreeoflife.org/ott/"
     #     f"{ott_major_version}/{ott_version}.tgz"
     # )
-    return f"https://files.opentreeoflife.org/ott/{ott_version}/{ott_version}.tar.gz"
+    return f"https://files.opentreeoflife.org/ott/{ott_version}/{ott_version}.tgz"
 
 
 @flow()

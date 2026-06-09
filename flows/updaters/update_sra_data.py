@@ -243,12 +243,12 @@ def fetch_sra_xml(
     efetch_cmd = ["efetch", "-db", "sra", "-format", "docsum"]
 
     print(f"Running esearch | efetch for taxid {root_taxid} ({min_date} to {max_date})")
-    esearch = run_quoted(esearch_cmd, capture_output=True, text=True, timeout=300)
+    esearch = run_quoted(esearch_cmd, capture_output=True, text=True, timeout=3000)
     if esearch.returncode != 0:
         raise RuntimeError(f"esearch failed: {esearch.stderr}")
 
     with open(output_xml, "w") as f:
-        efetch = run_quoted(efetch_cmd, input=esearch.stdout, capture_output=True, text=True, timeout=600)
+        efetch = run_quoted(efetch_cmd, input=esearch.stdout, capture_output=True, text=True, timeout=6000)
         if efetch.returncode != 0:
             raise RuntimeError(f"efetch failed: {efetch.stderr}")
         f.write(efetch.stdout)
