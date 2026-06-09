@@ -65,7 +65,7 @@ def update_nhm_status_list(output_path: str, s3_path: str = "", min_records: int
         event="update.nhm.tsv.finished",
         resource={
             "prefect.resource.id": f"update.nhm.{output_path}",
-            "prefect.resource.type": "nhm.tsv",
+            "prefect.resource.type": "nhm.status",
         },
         payload={"line_count": line_count},
     )
