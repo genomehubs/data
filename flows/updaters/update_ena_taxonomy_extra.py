@@ -33,9 +33,7 @@ def read_ncbi_tax_ids(taxdump_path: str) -> set[str]:
 
 
 @task(log_prints=True)
-def add_jsonl_tax_ids(
-    jsonl_path: str, tax_ids: set[str], allowed_tax_ids: set[str] | None = None
-) -> None:
+def add_jsonl_tax_ids(jsonl_path: str, tax_ids: set[str], allowed_tax_ids: set[str] | None = None) -> None:
     print(f"Reading previously fetched ENA taxids from {jsonl_path}")
     filtered_path = f"{jsonl_path}.filtered"
     try:
@@ -43,9 +41,7 @@ def add_jsonl_tax_ids(
             for line in f:
                 data = json.loads(line)
                 tax_id = data["taxId"]
-                if (
-                    allowed_tax_ids is None or tax_id in allowed_tax_ids
-                ) and tax_id not in tax_ids:
+                if (allowed_tax_ids is None or tax_id in allowed_tax_ids) and tax_id not in tax_ids:
                     f_out.write(line)
                     tax_ids.add(tax_id)
         os.replace(filtered_path, jsonl_path)
@@ -59,10 +55,7 @@ def get_ena_api_taxids(root_taxid: str) -> set[str]:
     print(f"Fetching taxids for tax_tree({root_taxid}) from ENA API")
 
     limit = 10000000
-    url = (
-        f"https://www.ebi.ac.uk/ena/portal/api/search?result=taxon"
-        f"&query=tax_tree({root_taxid})&limit={limit}"
-    )
+    url = f"https://www.ebi.ac.uk/ena/portal/api/search?result=taxon" f"&query=tax_tree({root_taxid})&limit={limit}"
 
     # Stream the content of the URL
     column_index = None
@@ -138,8 +131,8 @@ def upload_s3_jsonl(local_path: str, s3_path: str) -> None:
 
 @flow()
 def update_ena_taxonomy_extra(
-    root_taxid: str, taxdump_path: str, output_path: str, s3_path: str, append: bool
-) -> None:
+    root_taxid: str, taxdump_path: str, output_path: str, s3_path: str = "", append: bool = False
+) -> bool:
     """Update the ENA taxonomy JSONL file.
 
     Args:

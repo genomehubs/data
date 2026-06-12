@@ -20,12 +20,13 @@ from flows.lib.utils import fetch_from_s3, is_safe_path, popen_quoted, upload_to
 def get_file_paths_from_config(config: dict, file_paths: dict) -> dict:
     key = config.get("xref_label")
     input_path = config.get("path")
-    output_path = config.get("out")
+    output_path = config.get("out", "./taxonomy.jsonl")
     if key is not None and input_path is not None:
         file_paths[key] = {
             "input": input_path,
         }
-    return output_path
+    file_paths["out"] = output_path
+    return file_paths
 
 
 @task(log_prints=True)
@@ -39,9 +40,7 @@ def read_input_config(input_path: str) -> dict:
         print(f"Error reading {input_path}: {e}")
         exit()
     try:
-        output_path = get_file_paths_from_config(config, file_paths)
-        if output_path is not None:
-            file_paths["out"] = output_path
+        file_paths = get_file_paths_from_config(config, file_paths)
         for taxonomy in config.get("taxonomies", []):
             get_file_paths_from_config(taxonomy, file_paths)
     except Exception as e:
@@ -79,8 +78,9 @@ def run_blobtk_taxonomy(root_taxid: str, input_path: str, output_path: str) -> N
             text=True,
             bufsize=1,
         )
-        for line in process.stdout:
-            print(line, end="")
+        if process.stdout is not None:
+            for line in process.stdout:
+                print(line, end="")
         process.wait()
         if process.returncode != 0:
             print(f"Command failed with exit code {process.returncode}")
@@ -103,9 +103,7 @@ def upload_s3_file(local_path: str, s3_path: str) -> None:
 
 
 @flow()
-def update_genomehubs_taxonomy(
-    root_taxid: str, input_path: str, output_path: str, s3_path: str
-) -> None:
+def update_genomehubs_taxonomy(root_taxid: str, input_path: str, output_path: str, s3_path: str = "") -> None:
     """Update the GenomeHubs taxonomy JSONL file.
 
     Args:

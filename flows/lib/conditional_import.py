@@ -35,5 +35,6 @@ else:
     from prefect.events import emit_event
     from prefect.runtime.task_run import run_count
 
+NO_CACHE = NO_CACHE
 
-__all__ = ["flow", "task", "emit_event", "run_count", "skip_prefect", "NO_CACHE"]
+__all__ = ["flow", "task", "emit_event", "run_count", "skip_prefect"]

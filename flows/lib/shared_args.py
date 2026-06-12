@@ -57,6 +57,16 @@ DATE = {
     },
 }
 
+DIVISION = {
+    "flags": ["--division"],
+    "keys": {
+        "help": "Ensembl division (fungi, metazoa, plants, protists, rapid, vertebrates).",
+        "type": str,
+        "default": "vertebrates",
+    },
+}
+
+
 DRY_RUN = {
     "flags": ["-d", "--dry_run"],
     "keys": {
@@ -93,6 +103,15 @@ INDEX_TYPE = {
     "flags": ["-x", "--index_type"],
     "keys": {"help": "Type of index to fetch.", "type": str},
 }
+
+INDEX_URL = {
+    "flags": ["--index_url"],
+    "keys": {
+        "help": "URL to the private index TSV listing project sheets.",
+        "type": str,
+    },
+}
+
 
 INPUT_PATH = {
     "flags": ["-i", "--input_path"],
@@ -197,9 +216,7 @@ YAML_PATH = {
 }
 
 
-def default(
-    arg: Dict[str, Any], default: Union[int, float, bool, str]
-) -> Dict[str, Any]:
+def default(arg: Dict[str, Any], default: Union[int, float, bool, str]) -> Dict[str, Any]:
     """Return an argument with a default value."""
     # append/replace the default value to the help message
     default_re = r"\s*\(default: .*\)"

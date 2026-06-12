@@ -43,9 +43,7 @@ def fetch_nhm_tsv(
 
     # If the file has less than min_records lines, raise an error
     if line_count < min_lines:
-        raise RuntimeError(
-            f"File {file_path} has less than {min_lines} lines: {line_count}"
-        )
+        raise RuntimeError(f"File {file_path} has less than {min_lines} lines: {line_count}")
     # Return the line count
     return line_count
 
@@ -57,7 +55,7 @@ def upload_s3_tsv(local_path: str, s3_path: str) -> None:
 
 
 @flow()
-def update_nhm_status_list(output_path: str, s3_path: str, min_records: int) -> None:
+def update_nhm_status_list(output_path: str, s3_path: str = "", min_records: int = 0) -> bool:
     """Update the NHM status list TSV file."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     line_count = fetch_nhm_tsv(output_path, min_records)
@@ -67,7 +65,7 @@ def update_nhm_status_list(output_path: str, s3_path: str, min_records: int) -> 
         event="update.nhm.tsv.finished",
         resource={
             "prefect.resource.id": f"update.nhm.{output_path}",
-            "prefect.resource.type": "nhm.tsv",
+            "prefect.resource.type": "nhm.status",
         },
         payload={"line_count": line_count},
     )
@@ -76,12 +74,6 @@ def update_nhm_status_list(output_path: str, s3_path: str, min_records: int) -> 
 
 if __name__ == "__main__":
     """Run the flow."""
-    args = parse_args(
-        [required(OUTPUT_PATH), S3_PATH, MIN_RECORDS],
-        "Fetch species data from NHM.",
-    )
-
-    update_nhm_status_list(**vars(args))
     args = parse_args(
         [required(OUTPUT_PATH), S3_PATH, MIN_RECORDS],
         "Fetch species data from NHM.",

@@ -264,3 +264,362 @@ deployments:
     schedules:
       - *daily
     work_pool: *goat_data_work_pool
+
+  # -----------------------------------------------------------------------
+  # Phase 1 updaters — external data fetching (migrated from goat-data)
+  # -----------------------------------------------------------------------
+
+  - name: update-vgp-original-status
+    # Fetch VGP original status list from GitHub YAML tracker (monthly)
+    entrypoint: flows/updaters/update_vgp_original_status.py:update_vgp_original_status
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/status-lists/vgp_original_status.tsv"
+      s3_path: s3://goat/resources/status-lists/vgp_original_status.tsv
+      min_records: 100
+    schedules:
+      - *monthly
+    work_pool: *goat_data_work_pool
+
+  - name: update-vgp-status
+    # Fetch VGP Ordinal Phase1+ status from the live Google Sheet
+    entrypoint: flows/updaters/update_vgp_status.py:update_vgp_status
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/status-lists/VGP_Ordinal_Phase1_plus.tsv"
+      s3_path: s3://goat/resources/status-lists/VGP_Ordinal_Phase1_plus.tsv
+      min_records: 100
+    schedules:
+      - *daily
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-main
+    # Fetch species metadata from Ensembl main site
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_metadata.tsv.gz"
+      division: vertebrates
+      s3_path: s3://goat/resources/assembly-data/ensembl_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-metazoa
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_metazoa_metadata.tsv.gz"
+      division: metazoa
+      s3_path: s3://goat/resources/assembly-data/ensembl_metazoa_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-plants
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_plants_metadata.tsv.gz"
+      division: plants
+      s3_path: s3://goat/resources/assembly-data/ensembl_plants_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-fungi
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_fungi_metadata.tsv.gz"
+      division: fungi
+      s3_path: s3://goat/resources/assembly-data/ensembl_fungi_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-protists
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_protists_metadata.tsv.gz"
+      division: protists
+      s3_path: s3://goat/resources/assembly-data/ensembl_protists_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ensembl-metadata-rapid
+    entrypoint: flows/updaters/update_ensembl_metadata.py:update_ensembl_metadata
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ensembl_rapid_metadata.tsv.gz"
+      division: rapid
+      s3_path: s3://goat/resources/assembly-data/ensembl_rapid_metadata.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-ucsc-assemblies
+    # Fetch UCSC assembly hub accession list
+    entrypoint: flows/updaters/update_ucsc_assemblies.py:update_ucsc_assemblies
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/ucsc_assemblies.tsv"
+      s3_path: s3://goat/resources/assembly-data/ucsc_assemblies.tsv
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-jgi-status
+    # Fetch JGI 1KFG project data via OAuth API
+    entrypoint: flows/updaters/update_jgi_status.py:update_jgi_status
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/jgi_1kfg_status.tsv"
+      s3_path: s3://goat/resources/assembly-data/jgi_1kfg_status.tsv
+    schedules:
+      - *weekly
+    work_pool:
+      name: goat-data
+      work_queue_name: default
+      job_variables:
+        env:
+          JGI_OFFLINE_TOKEN: "{{ $JGI_OFFLINE_TOKEN }}"
+
+  - name: update-sra-data
+    # Fetch SRA data via NCBI E-utilities
+    entrypoint: flows/updaters/update_sra_data.py:update_sra_data
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/sra_data.tsv.gz"
+      s3_path: s3://goat/resources/assembly-data/sra_data.tsv.gz
+    schedules:
+      - *weekly
+    work_pool:
+      name: goat-data
+      work_queue_name: default
+      job_variables:
+        env:
+          NCBI_API_KEY: "{{ $NCBI_API_KEY }}"
+
+  - name: update-blobtoolkit
+    # Fetch BlobToolKit analysis data via API
+    entrypoint: flows/updaters/update_blobtoolkit.py:update_blobtoolkit
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/btk.tsv.gz"
+      s3_path: s3://goat/resources/assembly-data/btk.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-refseq-organelles
+    # Fetch and parse RefSeq organelle data from NCBI FTP
+    entrypoint: flows/updaters/update_refseq_organelles.py:update_refseq_organelles
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/assembly-data/refseq_organelles.tsv.gz"
+      s3_path: s3://goat/resources/assembly-data/refseq_organelles.tsv.gz
+    schedules:
+      - *weekly
+    work_pool: *goat_data_work_pool
+
+  - name: update-google-sheets-status
+    # Fetch project status data from Google Sheets
+    entrypoint: flows/updaters/update_google_sheets_status.py:update_google_sheets_status
+    parameters:
+      output_path: "/home/ubuntu/tmp/test/status-lists/google-sheets"
+      # This needs to be set to the URL of a TSV file containing the list of Google Sheets to fetch
+      index_url: ""
+      s3_path: s3://goat/resources/status-lists/google-sheets/
+    schedules:
+      - *daily
+    work_pool: *goat_data_work_pool
+
+  # -----------------------------------------------------------------------
+  # Phase 2 fetch-parse-validate — triggered by Phase 1 update events
+  # -----------------------------------------------------------------------
+
+  - name: batch-validate-google-sheets-status
+    # Triggered by update.google.sheets.status.finished
+    # Runs fetch-parse-validate (SKIP_PARSING) for each status list TSV
+    entrypoint: flows/orchestrators/batch_validate_status_lists.py:batch_validate_status_lists
+    parameters:
+      yaml_dir: "../goat-data-main/sources/status-lists"
+      work_dir: "/home/ubuntu/tmp/test/status-lists/google-sheets"
+      s3_path: "s3://goat/sources/status-lists/"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: google.sheets.status
+        expect:
+          - update.google.sheets.status.finished
+        parameters:
+          yaml_dir: "../goat-data-main/sources/status-lists"
+          work_dir: "/home/ubuntu/tmp/test/status-lists/google-sheets"
+          s3_path: "s3://goat/sources/status-lists/"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-blobtoolkit
+    # Triggered by update.blobtoolkit.finished
+    # Skip parsing — blobtk validate handles taxonomy column detection
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.SKIP_PARSING"
+      yaml_path: "../goat-data-main/sources/btk/btk.types.yaml"
+      s3_path: "s3://goat/sources/btk/"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: blobtoolkit
+        expect:
+          - update.blobtoolkit.finished
+        parameters:
+          parser: "ParserEnum.SKIP_PARSING"
+          yaml_path: "../goat-data-main/sources/btk/btk.types.yaml"
+          s3_path: "s3://goat/sources/btk/"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-refseq-organelles
+    # Triggered by update.refseq.organelles.finished
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.REFSEQ_ORGANELLES"
+      yaml_path: "../goat-data-main/sources/assembly-data/refseq_organelles.types.yaml"
+      s3_path: "s3://goat/sources/assembly-data/"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: refseq.organelles
+        expect:
+          - update.refseq.organelles.finished
+        parameters:
+          parser: "ParserEnum.REFSEQ_ORGANELLES"
+          yaml_path: "../goat-data-main/sources/assembly-data/refseq_organelles.types.yaml"
+          s3_path: "s3://goat/sources/assembly-data/"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-sra-data
+    # Triggered by update.sra.data.finished
+    # SRA updater output already matches YAML schema — skip parsing, validate only
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.SKIP_PARSING"
+      yaml_path: "../goat-data-main/sources/sra/sra.types.yaml"
+      s3_path: "s3://goat/sources/sra/"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: sra.data
+        expect:
+          - update.sra.data.finished
+        parameters:
+          parser: "ParserEnum.SKIP_PARSING"
+          yaml_path: "../goat-data-main/sources/sra/sra.types.yaml"
+          s3_path: "s3://goat/sources/sra/"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-vgp-status
+    # Triggered by update.vgp.status.finished
+    # VGP Ordinal updater output is a superset of YAML columns — skip parsing, validate only
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.SKIP_PARSING"
+      yaml_path: "../goat-data-main/sources/status-lists/FILE_VGP_Ordinal_Phase1.types.yaml"
+      s3_path: "s3://goat/sources/status-lists/"
+      work_dir: "/home/ubuntu/tmp/test/status-lists"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: vgp.status
+        expect:
+          - update.vgp.status.finished
+        parameters:
+          parser: "ParserEnum.SKIP_PARSING"
+          yaml_path: "../goat-data-main/sources/status-lists/FILE_VGP_Ordinal_Phase1.types.yaml"
+          s3_path: "s3://goat/sources/status-lists/"
+          work_dir: "/home/ubuntu/tmp/test/status-lists"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-jgi-status
+    # Triggered by update.jgi.status.finished
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.SEQUENCING_STATUS"
+      yaml_path: "../goat-data-main/sources/assembly-data/1kfg_manual_bioprojects.types.yaml"
+      s3_path: "s3://goat/sources/assembly-data/"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: jgi.status
+        expect:
+          - update.jgi.status.finished
+        parameters:
+          parser: "ParserEnum.SEQUENCING_STATUS"
+          yaml_path: "../goat-data-main/sources/assembly-data/1kfg_manual_bioprojects.types.yaml"
+          s3_path: "s3://goat/sources/assembly-data/"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-ucsc-assemblies
+    # Triggered by update.ucsc.assemblies.finished
+    # Skip parsing — YAML column mapping can be adjusted later if needed
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.SKIP_PARSING"
+      yaml_path: "../goat-data-main/sources/assembly-data/ucsc_ids.types.yaml"
+      s3_path: "s3://goat/sources/assembly-data/"
+      work_dir: "/home/ubuntu/tmp/test/assembly-data"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: ucsc.assemblies
+        expect:
+          - update.ucsc.assemblies.finished
+        parameters:
+          parser: "ParserEnum.SKIP_PARSING"
+          yaml_path: "../goat-data-main/sources/assembly-data/ucsc_ids.types.yaml"
+          s3_path: "s3://goat/sources/assembly-data/"
+          work_dir: "/home/ubuntu/tmp/test/assembly-data"
+          dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: fetch-parse-validate-nhm-status
+    # Triggered by update.nhm.status.finished (legacy NHM updater)
+    # NHM updater output is a superset of YAML columns — skip parsing, validate only
+    entrypoint: flows/lib/wrapper_fetch_parse_validate.py:fetch_parse_validate
+    parameters:
+      parser: "ParserEnum.SKIP_PARSING"
+      yaml_path: "../goat-data-main/sources/status-lists/FILE_DTOL_nhm.types.yaml"
+      s3_path: "s3://goat/sources/status-lists/"
+      work_dir: "/home/ubuntu/tmp/test/status-lists"
+      dry_run: true
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: nhm.status
+        expect:
+          - update.nhm.status.finished
+        parameters:
+          parser: "ParserEnum.SKIP_PARSING"
+          yaml_path: "../goat-data-main/sources/status-lists/FILE_DTOL_nhm.types.yaml"
+          s3_path: "s3://goat/sources/status-lists/"
+          work_dir: "/home/ubuntu/tmp/test/status-lists"
+          dry_run: true
+    work_pool: *goat_data_work_pool

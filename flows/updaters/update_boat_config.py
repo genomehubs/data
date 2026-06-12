@@ -30,29 +30,16 @@ def taxon_id_to_ssh_path(ssh_host, taxon_id, assembly_name):
         ssh_host,
         "bash",
         "-c",
-        (
-            f"'. /etc/profile && module load speciesops && "
-            f"speciesops getdir --taxon_id {taxon_id}'"
-        ),
+        (f"'. /etc/profile && module load speciesops && " f"speciesops getdir --taxon_id {taxon_id}'"),
     ]
     result = run_quoted(command, capture_output=True, text=True)
     if result.returncode != 0:
-        print(
-            (
-                f"WARNING: Error fetching directory for taxon_id {taxon_id}: "
-                f"{result.stderr}"
-            )
-        )
+        print((f"WARNING: Error fetching directory for taxon_id {taxon_id}: " f"{result.stderr}"))
         return
     # Filter the result to get the lustre path
     lustre_path = [line for line in result.stdout.splitlines() if "/lustre" in line]
     if not lustre_path:
-        print(
-            (
-                f"WARNING: No lustre path found for taxon_id {taxon_id} in result: "
-                f"{result.stdout}"
-            )
-        )
+        print((f"WARNING: No lustre path found for taxon_id {taxon_id} in result: " f"{result.stdout}"))
         return
     # Use the first lustre path
     lustre_path = lustre_path[0].strip()
@@ -60,6 +47,7 @@ def taxon_id_to_ssh_path(ssh_host, taxon_id, assembly_name):
 
 
 def lookup_buscos(ssh_host, file_path):
+    busco_dirs = []
     if "lustre" in file_path:
         if not is_safe_path(ssh_host):
             raise ValueError(f"Unsafe ssh host: {ssh_host}")
@@ -77,9 +65,7 @@ def lookup_buscos(ssh_host, file_path):
         if result.returncode != 0:
             return []
         busco_dirs = [
-            os.path.basename(os.path.normpath(line))
-            for line in result.stdout.splitlines()
-            if "/busco" in line
+            os.path.basename(os.path.normpath(line)) for line in result.stdout.splitlines() if "/busco" in line
         ]
     return busco_dirs
 
@@ -117,11 +103,9 @@ def assembly_id_to_busco_sets(alt_host, assembly_id):
     ]
     busco_sets = []
     for lineage in lineages:
-        busco_url = (
-            f"https://busco.cog.sanger.ac.uk/{assembly_id}/{lineage}/full_table.tsv"
-        )
+        busco_url = f"https://busco.cog.sanger.ac.uk/{assembly_id}/{lineage}/full_table.tsv"
         response = safe_get(busco_url)
-        if response.status_code == 200:
+        if response is not None and response.status_code == 200:
             busco_sets.append(lineage)
     return f"https://busco.cog.sanger.ac.uk/{assembly_id}", busco_sets
 
@@ -192,10 +176,10 @@ def fetch_goat_results(root_taxid: str, output_path: str) -> list[dict]:
     # fetch query_url with accept header tsv. use python module requests
     headers = {"Accept": "text/tab-separated-values"}
     response = safe_get(query_url, headers=headers)
+    if response is None:
+        raise RuntimeError("Error fetching BoaT config info: No response received")
     if response.status_code != 200:
-        raise RuntimeError(
-            f"Error fetching BoaT config info: {response.status_code} {response.text}"
-        )
+        raise RuntimeError(f"Error fetching BoaT config info: {response.status_code} {response.text}")
 
     # Parse the TSV response
     if tsv_data := parse_tsv(response.text):
@@ -294,29 +278,21 @@ def fetch_boat_config_info(
         int: Number of lines written to the output file.
     """
 
-    tsv_data = fetch_goat_results(root_taxid)
+    tsv_data = fetch_goat_results(root_taxid, file_path)
 
     # Prepare output files and get visited assembly IDs
     visited_file_path = f"{os.path.splitext(file_path)[0]}.visited"
-    visited_assembly_ids, line_count = prepare_output_files(
-        file_path, visited_file_path, append
-    )
+    visited_assembly_ids, line_count = prepare_output_files(file_path, visited_file_path, append)
 
     for row in tsv_data:
         taxon_id = row["taxon_id"]
         assembly_id = row["assembly_id"]
         # Skip if the assembly_id has already been visited
         if assembly_id in visited_assembly_ids:
-            print(
-                (
-                    f"Skipping already visited assembly_id {assembly_id} "
-                    f"for taxon_id {taxon_id}."
-                )
-            )
+            print((f"Skipping already visited assembly_id {assembly_id} " f"for taxon_id {taxon_id}."))
             continue
         print(
-            f"Processing taxon_id {taxon_id}, assembly_id {assembly_id} "
-            f"for assembly_name {row['assembly_name']}."
+            f"Processing taxon_id {taxon_id}, assembly_id {assembly_id} " f"for assembly_name {row['assembly_name']}."
         )
         # Add the assembly_id to the new visited list
         with open(visited_file_path, "a") as f:
@@ -336,8 +312,7 @@ def fetch_boat_config_info(
 
         if not busco_sets:
             print(
-                f"Warning: No BUSCO sets found for taxon_id {taxon_id} "
-                f"and assembly_name {assembly_name}. Skipping."
+                f"Warning: No BUSCO sets found for taxon_id {taxon_id} " f"and assembly_name {assembly_name}. Skipping."
             )
             continue
 
@@ -358,9 +333,7 @@ def fetch_boat_config_info(
         line_count += 1
 
     if line_count < min_lines:
-        print(
-            f"WARNING: File {file_path} has less than {min_lines} lines: {line_count}"
-        )
+        print(f"WARNING: File {file_path} has less than {min_lines} lines: {line_count}")
 
     # Return the number of lines written to the file
     return line_count
@@ -419,13 +392,7 @@ def compare_datasets_summary(local_path: str, s3_path: str) -> bool:
 def filter_buscos(buscos):
     # Exclude bacteria_odb and archaea_odb
     buscos = [
-        b
-        for b in buscos
-        if not (
-            b.startswith("bacteria_odb")
-            or b.startswith("archaea_odb")
-            or b.startswith("mm49_")
-        )
+        b for b in buscos if not (b.startswith("bacteria_odb") or b.startswith("archaea_odb") or b.startswith("mm49_"))
     ]
     # Group by prefix before _odb
     prefix_map = defaultdict(list)
@@ -446,9 +413,7 @@ def filter_buscos(buscos):
 
 
 @task(log_prints=True)
-def filter_farm_data(
-    farm_results_path: str, goat_results_path: str, output_path: str
-) -> None:
+def filter_farm_data(farm_results_path: str, goat_results_path: str, output_path: str) -> None:
     """Filter farm results to include only assemblies with lepidoptera BUSCOs.
 
     Combine with GoaT results to add additional fields.
@@ -513,9 +478,7 @@ def filter_farm_data(
 
 
 @flow()
-def update_boat_config(
-    root_taxid: str, output_path: str, append: bool, s3_path: str
-) -> None:
+def update_boat_config(root_taxid: str, output_path: str, append: bool = False, s3_path: str = "") -> None:
     # fetch_goat_results(root_taxid, f"{output_path}/goat_results.tsv")
 
     # trawl_farm_data(

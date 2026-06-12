@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import contextlib
+import glob
 import gzip
 import hashlib
 import os
@@ -18,6 +19,8 @@ from typing import Dict, List, Optional
 import boto3
 import requests
 from botocore.exceptions import ClientError
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from dateutil import parser
 from genomehubs import utils as gh_utils
 
@@ -129,6 +132,152 @@ class Parser:
         parsed_data = {}
         self.callback(data, parsed_data)
         return parsed_data
+
+
+def open_tsv(input_path: str):
+    """Open a TSV file (plain or gzipped) for reading.
+
+    Args:
+        input_path (str): Path to the input TSV file (.tsv or .tsv.gz).
+
+    Returns:
+        File handle in text mode.
+    """
+    if input_path.endswith(".gz"):
+        return gzip.open(input_path, "rt", encoding="utf-8", newline="")
+    return open(input_path, "rt", encoding="utf-8", newline="")
+
+
+def parse_tsv_with_config(
+    input_path: str,
+    config: "Config",
+    key_field: Optional[str] = None,
+    delimiter: str = "\t",
+) -> Dict[str, dict]:
+    """Parse a TSV file row-by-row through a Config's parse functions.
+
+    Each row of the TSV is treated as a flat dict keyed by column header,
+    matching the expected ``path:`` references in YAML attribute definitions.
+    Rows are passed through ``gh_utils.parse_report_values`` to apply any
+    YAML-defined translations and field mappings, then keyed in the returned
+    dict by ``key_field`` (or by row index if not provided).
+
+    Args:
+        input_path (str): Path to the input TSV file (.tsv or .tsv.gz).
+        config (Config): Loaded YAML configuration.
+        key_field (str): Optional input column name to use as the dict key.
+            If not provided, rows are keyed by sequential integer.
+        delimiter (str): Field delimiter in the TSV (default: tab).
+
+    Returns:
+        Dict[str, dict]: Mapping of key → parsed row dict (YAML-named fields).
+    """
+    parsed: Dict[str, dict] = {}
+    with open_tsv(input_path) as fh:
+        reader = DictReader(fh, delimiter=delimiter)
+        for index, record in enumerate(reader):
+            row = gh_utils.parse_report_values(config.parse_fns, record)
+            if key_field and key_field in record and record[key_field]:
+                key = record[key_field]
+            else:
+                key = str(index)
+            parsed[key] = row
+    return parsed
+
+
+def locate_input_tsv(work_dir: str, expected_name: Optional[str] = None) -> str:
+    """Locate the input TSV in ``work_dir`` for a generic parser.
+
+    Picks the single ``*.tsv`` or ``*.tsv.gz`` in ``work_dir`` whose basename
+    is not the expected output. Falls back to a direct hit on ``expected_name``
+    when present.
+
+    Args:
+        work_dir (str): Working directory.
+        expected_name (str): Output filename from ``config.meta["file_name"]``;
+            used to exclude the parser's intended output from candidate
+            inputs.
+
+    Returns:
+        str: Path to the input TSV.
+
+    Raises:
+        FileNotFoundError: If no candidate TSV is found.
+        ValueError: If multiple candidate TSVs are found.
+    """
+    candidates = sorted(
+        glob.glob(os.path.join(work_dir, "*.tsv"))
+        + glob.glob(os.path.join(work_dir, "*.tsv.gz"))
+    )
+    if expected_name:
+        candidates = [
+            c for c in candidates if os.path.basename(c) != expected_name
+        ]
+    if not candidates:
+        raise FileNotFoundError(
+            f"No TSV input found in {work_dir} (expected != {expected_name})"
+        )
+    if len(candidates) > 1:
+        raise ValueError(
+            f"Multiple TSV inputs in {work_dir}: {candidates!r}"
+        )
+    return candidates[0]
+
+
+def run_generic_tsv_parser(
+    working_yaml: str,
+    work_dir: str,
+    append: bool = False,
+    key_field: Optional[str] = None,
+) -> None:
+    """Run the generic flat-TSV-with-Config parsing pipeline.
+
+    Locates the input TSV in ``work_dir``, loads the YAML config,
+    applies ``parse_report_values`` row-by-row, and writes the
+    canonical TSV to ``work_dir`` (preserving the YAML-defined
+    ``file_name`` for downstream validation).
+
+    Args:
+        working_yaml (str): Path to the working YAML config file.
+        work_dir (str): Working directory.
+        append (bool): If True, load previous parsed data.
+        key_field (str): Optional input column to key parsed rows by.
+    """
+    config = load_config(config_file=working_yaml, load_previous=append)
+    expected_name = config.meta["file_name"]
+    input_path = locate_input_tsv(work_dir, expected_name)
+    print(f"Parsing {input_path} with {working_yaml}")
+
+    parsed = parse_tsv_with_config(input_path, config, key_field=key_field)
+    print(f"Parsed {len(parsed)} records")
+
+    output_name = config.meta["file_name"]
+    config.meta["file_name"] = os.path.join(
+        work_dir, os.path.basename(output_name)
+    )
+    try:
+        write_parsed_tsv(parsed, config)
+    finally:
+        config.meta["file_name"] = output_name
+
+
+def write_parsed_tsv(parsed: Dict[str, dict], config: "Config") -> None:
+    """Write a parsed dict to TSV using config-defined headers and meta.
+
+    Handles ``.gz`` filenames by writing uncompressed then gzipping.
+
+    Args:
+        parsed (Dict[str, dict]): Mapping of key → row dict.
+        config (Config): Loaded YAML configuration.
+    """
+    file_name = config.meta["file_name"]
+    if file_name.endswith(".gz"):
+        config.meta["file_name"] = file_name[:-3]
+        gh_utils.write_tsv(parsed, config.headers, config.meta)
+        os.system(f"gzip -f {config.meta['file_name']}")
+        config.meta["file_name"] = file_name
+    else:
+        gh_utils.write_tsv(parsed, config.headers, config.meta)
 
 
 def format_entry(entry, key: str, meta: dict) -> str:
@@ -550,13 +699,56 @@ def enum_action(enum_class):
     return EnumAction
 
 
+def _build_session(retries=3, backoff_factor=1.0, status_forcelist=None):
+    """Build a requests Session with transport-level retry logic.
+
+    Args:
+        retries (int): Total number of retries per request.
+        backoff_factor (float): Backoff factor for exponential delay between retries.
+        status_forcelist (list): HTTP status codes to trigger a retry.
+
+    Returns:
+        requests.Session: Configured session with retry adapter.
+    """
+    if status_forcelist is None:
+        status_forcelist = [429, 500, 502, 503, 504]
+    retry = Retry(
+        total=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+        allowed_methods=["GET", "POST", "HEAD"],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session = requests.Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
 def safe_get(*args, method="GET", timeout=300, **kwargs):
+    """Make an HTTP request with transport-level retries.
+
+    Retries automatically on 429/5xx status codes and connection errors
+    with exponential backoff (1s, 2s, 4s). Separate from Prefect task-level
+    retries which re-run the entire task.
+
+    Args:
+        *args: Positional arguments passed to requests (typically the URL).
+        method (str): HTTP method — "GET", "POST", or "HEAD".
+        timeout (int): Request timeout in seconds.
+        **kwargs: Additional keyword arguments passed to requests.
+
+    Returns:
+        requests.Response: The HTTP response object.
+    """
+    session = _build_session()
     if method == "GET":
-        return requests.get(*args, timeout=timeout, **kwargs)
+        return session.get(*args, timeout=timeout, **kwargs)
     elif method == "POST":
-        return requests.post(*args, timeout=timeout, **kwargs)
+        return session.post(*args, timeout=timeout, **kwargs)
     elif method == "HEAD":
-        return requests.head(*args, timeout=timeout, **kwargs)
+        return session.head(*args, timeout=timeout, **kwargs)
 
 
 def find_http_file(http_path: str, filename: str) -> str:
