@@ -132,59 +132,6 @@ This example command assumes the [genomehubs/goat-data](https://github.com/genom
 SKIP_PREFECT=true python3 -m flows.parsers.parse_ncbi_assemblies -i /tmp/assembly-data/ncbi_datasets_canidae.jsonl -y /tmp/assembly-data/ncbi_datasets_eukaryota.types.yaml -a
 ```
 
-### Assembly version tracking
-
-Three flows track NCBI assembly versions that become superseded over time, writing the result to `assembly_historical.tsv`:
-
-- `flows/parsers/parse_backfill_historical_versions.py` — **one-time** backfill. Given a JSONL of current assemblies, finds every assembly with version > 1, discovers its earlier versions over NCBI FTP, and parses each one into `assembly_historical.tsv`. Run once before starting the daily incremental flow below.
-- `flows/parsers/parse_assembly_versions.py` — **daily incremental**. Given today's assembly JSONL and yesterday's parsed `assembly_current.tsv` (kept alongside it as `assembly_current.tsv.previous`), detects any assembly that became superseded since yesterday and appends it to `assembly_historical.tsv`. No NCBI fetches are required — the row is copied from the previous parse. If a predecessor version isn't found in `assembly_current.tsv.previous` (e.g. it was never present in the historical TSV in the first place), the assembly is written to `missing_versions.json` instead of failing.
-- `flows/updaters/update_assembly_versions.py` — updater that consumes `missing_versions.json`, fetches each missing accession's raw NCBI metadata, and writes it to `missing_assembly_versions.jsonl`. Feed that file back into `parse_backfill_historical_versions.py` as its `--input_path` to parse the missing version(s) into `assembly_historical.tsv`.
-
-Only `parse_backfill_historical_versions.py` takes a `--yaml_path`; its output path is resolved relative to the *directory the YAML file lives in*, not `--work_dir`, so place a copy of the YAML in `--work_dir` if you want the TSV written there. `parse_assembly_versions.py` and `update_assembly_versions.py` take no YAML — all paths are derived from `--input_path`/`--work_dir`.
-
-#### Example: minimal end-to-end run
-
-This walkthrough uses the existing test fixture `tests/test_data/assembly_test_sample.jsonl`, which contains three real assemblies, two of them (`GCA_000222935.2` and `GCA_000412225.2`) at version 2 — no extra data needs to be fetched or fabricated to exercise both code paths below.
-
-```
-mkdir -p /tmp/assembly-versions
-cp configs/assembly_historical.types.yaml /tmp/assembly-versions/
-cp tests/test_data/assembly_test_sample.jsonl /tmp/assembly-versions/assembly_data_report.jsonl
-
-# 1. One-time backfill: discovers and parses each assembly's earlier version(s) via NCBI FTP
-SKIP_PREFECT=true python3 -m flows.parsers.parse_backfill_historical_versions \
-  --input_path /tmp/assembly-versions/assembly_data_report.jsonl \
-  --yaml_path /tmp/assembly-versions/assembly_historical.types.yaml \
-  --work_dir /tmp/assembly-versions
-# -> writes /tmp/assembly-versions/assembly_historical.tsv
-
-# 2. Simulate "yesterday's" parse: a current.tsv that only knows about GCA_000222935.1
-printf "accession\tassembly_id\nGCA_000222935.1\tGCA_000222935_1\n" \
-  > /tmp/assembly-versions/assembly_current.tsv.previous
-
-# 3. Daily incremental: compares today's JSONL against yesterday's TSV
-SKIP_PREFECT=true python3 -m flows.parsers.parse_assembly_versions \
-  --input_path /tmp/assembly-versions/assembly_data_report.jsonl
-# -> GCA_000222935.2 supersedes the .1 row above: appended to assembly_historical.tsv
-# -> GCA_000412225.2 and GCA_003706615.3 have no earlier version in
-#    assembly_current.tsv.previous: both written to
-#    /tmp/assembly-versions/missing_versions.json instead
-
-# 4. Updater: fetch raw metadata for the accessions reported as missing
-SKIP_PREFECT=true python3 -m flows.updaters.update_assembly_versions \
-  --missing_json /tmp/assembly-versions/missing_versions.json \
-  --work_dir /tmp/assembly-versions
-# -> writes /tmp/assembly-versions/missing_assembly_versions.jsonl
-
-# 5. Feed the updater's output back into step 1 to backfill the missing version
-SKIP_PREFECT=true python3 -m flows.parsers.parse_backfill_historical_versions \
-  --input_path /tmp/assembly-versions/missing_assembly_versions.jsonl \
-  --yaml_path /tmp/assembly-versions/assembly_historical.types.yaml \
-  --work_dir /tmp/assembly-versions
-```
-
-Steps 1, 4 and 5 fetch from NCBI and require the [`datasets`](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/download-and-install/) CLI on `PATH` plus network access (FTP for version discovery, `datasets summary` for metadata); without it they report a clean per-accession fetch failure rather than crashing. Step 3 (`parse_assembly_versions.py`) makes no network calls at all — it only reads the previous TSV and the new JSONL.
-
 ### Validate
 
 The flow at `flows/lib/validate_file_pair.py` runs [blobtk validate](https://github.com/genomehubs/blobtk/wiki/blobtk-validate) to validate the entries in a TSV file against the YAML configuration and, optionally, an NCBI taxdump format taxonomy.
