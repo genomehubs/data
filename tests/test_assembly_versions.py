@@ -33,6 +33,7 @@ from flows.parsers.parse_assembly_versions import (  # noqa: E402
     load_previous_parsed_by_base,
     parse_assembly_versions,
 )
+from flows.parsers.parse_ncbi_assemblies import snapshot_previous_output  # noqa: E402
 from flows.updaters import update_assembly_versions as updater_module  # noqa: E402
 from flows.updaters.update_assembly_versions import (  # noqa: E402
     load_missing_versions,
@@ -509,3 +510,56 @@ class TestParseAssemblyVersionsPlugin:
         path.write_text(json.dumps(entries))
         result = load_missing_versions(str(path))
         assert result == entries
+
+
+# ---------------------------------------------------------------------------
+# TestSnapshotPreviousOutput
+# ---------------------------------------------------------------------------
+
+class TestSnapshotPreviousOutput:
+    """snapshot_previous_output preserves yesterday's output before it is overwritten.
+
+    parse_assembly_versions reads assembly_current.tsv.previous to find each newly
+    superseded predecessor; the snapshot must be taken before parse_ncbi_assemblies
+    overwrites assembly_current.tsv in place.
+    """
+
+    @staticmethod
+    def _config(file_name) -> MagicMock:
+        """Build a stand-in Config exposing only meta['file_name']."""
+        config = MagicMock()
+        config.meta = {"file_name": str(file_name)}
+        return config
+
+    def test_creates_previous_with_identical_content(self, tmp_path):
+        output = tmp_path / "assembly_current.tsv"
+        write_tsv(output, [{"accession": "GCA_000002035.3", "releaseDate": "2020-01-01"}])
+
+        snapshot_previous_output(self._config(output))
+
+        previous = tmp_path / "assembly_current.tsv.previous"
+        assert previous.exists()
+        assert previous.read_bytes() == output.read_bytes()
+
+    def test_no_op_when_no_prior_output(self, tmp_path):
+        output = tmp_path / "assembly_current.tsv"  # never created
+
+        snapshot_previous_output(self._config(output))
+
+        assert not (tmp_path / "assembly_current.tsv.previous").exists()
+
+    def test_no_op_when_file_name_missing(self):
+        config = MagicMock()
+        config.meta = {}  # no file_name key
+        # Should not raise.
+        snapshot_previous_output(config)
+
+    def test_overwrites_stale_previous_snapshot(self, tmp_path):
+        output = tmp_path / "assembly_current.tsv"
+        previous = tmp_path / "assembly_current.tsv.previous"
+        previous.write_text("stale-from-an-earlier-run\n", encoding="utf-8")
+        write_tsv(output, [{"accession": "GCA_000002035.4", "releaseDate": "2021-06-01"}])
+
+        snapshot_previous_output(self._config(output))
+
+        assert previous.read_bytes() == output.read_bytes()
