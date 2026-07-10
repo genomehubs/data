@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 from collections import defaultdict
 from glob import glob
@@ -155,6 +156,26 @@ def process_assembly_report(
         processed_report["processedAssemblyInfo"]["primaryValue"] = 1
 
     return processed_report
+
+
+def snapshot_previous_output(config: Config) -> None:
+    """Copy the prior-run output TSV to a `.previous` sibling before it is overwritten.
+
+    parse_assembly_versions needs yesterday's assembly_current.tsv to find each newly
+    superseded predecessor (v_n-1), but write_to_tsv overwrites the output file in
+    place. fetch_previous_file_pair has already placed yesterday's published copy at
+    config.meta["file_name"], so snapshotting it here preserves it across the overwrite,
+    at the exact path the historical parser reads. No-op on the first run, when no prior
+    output exists.
+
+    Args:
+        config (Config): Config whose meta["file_name"] is the output TSV path.
+    """
+    output_path = config.meta.get("file_name")
+    if output_path and os.path.exists(output_path):
+        previous_path = f"{output_path}.previous"
+        shutil.copy2(output_path, previous_path)
+        print(f"  Snapshotted previous output -> {previous_path}")
 
 
 @task()
@@ -550,6 +571,7 @@ def parse_ncbi_assemblies(
     else:
         data_freeze = parse_data_freeze_file(data_freeze_path)  # This returns the data freeze dictionary
         process_datafreeze_info(parsed, data_freeze, config)
+    snapshot_previous_output(config)
     write_to_tsv(parsed, config)
 
 
