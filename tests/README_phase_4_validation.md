@@ -19,7 +19,7 @@ Phases 0–3 must have run at least once before the validators have anything to 
 |---|---|
 | `flows/lib/assembly_lineage.py` | Reads the upstream `{rank}TaxId` columns: one rank→column mapping, the two absent sentinels, and `register_row_taxa` to turn row lineages into taxonomy nodes |
 | `flows/lib/compute_taxon_milestones.py` | Uses the row lineage where present and the taxdump otherwise; no longer requires `--taxdump_path` |
-| `tests/validate_pipeline.py` | Seven cross-file checks over the four output TSVs |
+| `tests/validate_pipeline.py` | Eight cross-file checks over the four output TSVs |
 | `tests/validate_no_ncbi_fetches.py` | Runs the daily version parse with sockets and subprocesses blocked |
 | `tests/test_assembly_lineage.py` | Unit tests for the column contract and the production path |
 | `tests/test_phase_4_validators.py` | Unit tests for both validators, including each failure mode |
@@ -34,7 +34,7 @@ python -m tests.validate_pipeline --work_dir tmp --yaml_path <config> --strict
 
 It resolves the current-TSV filename the same way the flows do — from
 `config.meta["file_name"]` when `--yaml_path` is given, by discovery in `work_dir`
-otherwise — then loads all four outputs and runs seven checks:
+otherwise — then loads all four outputs and runs eight checks:
 
 | Check | Assertion |
 |---|---|
@@ -46,14 +46,19 @@ otherwise — then loads all four outputs and runs seven checks:
 | `milestone-date-ordering` | the nested milestone dates never invert |
 | `in-ranks-validity` | every `first_*_in_ranks` value is a canonical rank |
 | `lineage-columns` | the upstream `{rank}TaxId` columns arrived, populated |
+| `lineage-coverage` | how many current rows carry no lineage at all |
 
-Exit status is 0 when every check passes, 1 otherwise. `lineage-columns` is a
-**warning** by default, because a dev run off a local taxdump legitimately has no
-lineage columns; `--strict` promotes warnings to failures, which is what a
-production run should use. Without those columns Phase 3 has no production
-taxonomy source, and `print_to_tsv` only writes columns declared in the types
-YAML — so the enrichment can be a silent no-op upstream and this is the check
-that catches it.
+Exit status is 0 when every check passes, 1 otherwise. Checks carry one of
+three severities: an **error** always fails the run, a **warning** fails it only
+under `--strict`, and a **note** never fails it.
+
+`lineage-columns` is a warning, because a dev run off a local taxdump
+legitimately has no lineage columns, while a production run should treat their
+absence as fatal — `print_to_tsv` writes only the columns the types YAML
+declares, so the enrichment can be a silent no-op upstream and this is the check
+that catches it. `lineage-coverage` is a note: some assemblies will always sit
+on a taxid the upstream lookup does not cover, so it is a number to watch rather
+than a defect, and a single uncovered row should not fail a 57,000-row run.
 
 Two deliberate looser readings of the Phase 4 plan:
 
@@ -117,7 +122,7 @@ Two traps the module handles:
   missing `nodes.jsonl`, warns, and returns rows without the columns. That is what
   the `lineage-columns` check in `validate_pipeline` exists to catch.
 
-**Still open with Rich** (neither blocks a run):
+**Still open with Rich** (none of these blocks a run):
 
 1. Are rank **names** coming alongside the taxids? Until they do, higher-rank rows
    in `taxon_milestone_summary.tsv` carry an empty `scientific_name` unless a

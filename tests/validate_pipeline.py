@@ -18,11 +18,14 @@ Checks, one per success metric in the Phase 4 plan:
     milestone-date-ordering  the nested milestone dates never invert
     in-ranks-validity        every first_*_in_ranks value is a canonical rank
     lineage-columns          the upstream {rank}TaxId columns arrived populated
+    lineage-coverage         how many current rows carry no lineage at all
 
-The last one is a warning by default: a dev run off a local taxdump has no
+lineage-columns is a warning by default: a dev run off a local taxdump has no
 lineage columns and is still valid. Pass --strict to make warnings fail, which
 is what a production run should use, since without those columns Phase 3
-silently falls back to whatever taxonomy source it can find.
+silently falls back to whatever taxonomy source it can find. lineage-coverage
+is a note that never fails: some assemblies will always sit on a taxid the
+upstream lookup does not cover, and that is a number to watch, not a defect.
 
 Usage:
     python -m tests.validate_pipeline --work_dir tmp
@@ -59,8 +62,11 @@ from flows.lib.shared_args import WORK_DIR, YAML_PATH  # noqa: E402
 from flows.lib.shared_args import parse_args as _parse_args  # noqa: E402
 from flows.lib.utils import load_config  # noqa: E402
 
+# Check severities: an error always fails the run, a warning fails it only
+# under --strict, and a note never fails it.
 ERROR = "error"
 WARNING = "warning"
+NOTE = "note"
 
 STRICT = {
     "flags": ["--strict"],
@@ -397,7 +403,7 @@ def check_lineage_columns(current_rows: list[dict]) -> list[str]:
         current_rows (list): Rows from the current TSV.
 
     Returns:
-        list: Problems describing missing or empty lineage columns.
+        list: Problems describing missing or wholly empty lineage columns.
     """
     if not current_rows:
         return []
@@ -408,16 +414,37 @@ def check_lineage_columns(current_rows: list[dict]) -> list[str]:
             f"({', '.join(lineage_columns())})"
         ]
 
-    populated = sum(1 for row in current_rows if row_lineage(row))
-    if populated == 0:
+    if not any(row_lineage(row) for row in current_rows):
         return ["every lineage column is empty on every row of the current TSV"]
-    if populated < len(current_rows):
-        return [
-            f"{len(current_rows) - populated} of {len(current_rows)} current "
-            "rows have an empty lineage"
-        ]
 
     return []
+
+
+def check_lineage_coverage(current_rows: list[dict]) -> list[str]:
+    """Report how many current rows carry no lineage at all.
+
+    Informational rather than a defect: the upstream lookup will not cover
+    every taxid, and those rows still compute milestones off the taxdump when
+    one is supplied. Worth watching as a number, since a jump means the
+    lookup went stale.
+
+    Args:
+        current_rows (list): Rows from the current TSV.
+
+    Returns:
+        list: A single line when some rows have no lineage.
+    """
+    if not current_rows or not rows_have_lineage_columns(current_rows):
+        return []
+
+    populated = sum(1 for row in current_rows if row_lineage(row))
+    if populated == len(current_rows):
+        return []
+
+    return [
+        f"{len(current_rows) - populated} of {len(current_rows)} current rows "
+        "have an empty lineage"
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +517,11 @@ def run_checks(outputs: dict) -> list[dict]:
                 "severity": WARNING,
                 "problems": check_lineage_columns(current_rows),
             },
+            {
+                "name": "lineage-coverage",
+                "severity": NOTE,
+                "problems": check_lineage_coverage(current_rows),
+            },
         ]
     )
     return results
@@ -514,9 +546,10 @@ def report(results: list[dict], strict: bool = False, max_examples: int = 5) -> 
             print(f"  PASS  {result['name']}")
             continue
 
-        fails = result["severity"] == ERROR or strict
+        severity = result["severity"]
+        fails = severity == ERROR or (severity == WARNING and strict)
         failures += 1 if fails else 0
-        label = "FAIL" if fails else "WARN"
+        label = "FAIL" if fails else ("WARN" if severity == WARNING else "NOTE")
         plural = "" if len(problems) == 1 else "s"
         print(f"  {label}  {result['name']} ({len(problems)} problem{plural})")
         for problem in problems[:max_examples]:

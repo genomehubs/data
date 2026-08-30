@@ -295,18 +295,36 @@ class TestLineageColumns:
         assert problems == ["every lineage column is empty on every row of "
                             "the current TSV"]
 
-    def test_partially_populated_columns_are_reported(self):
+    def test_none_sentinel_counts_as_empty(self):
+        rows = [{column: "None" for column in lineage_columns()}]
+        assert validator.check_lineage_columns(rows)
+
+
+class TestLineageCoverage:
+    def test_partially_populated_columns_are_noted(self):
         rows = [
             {column: "" for column in lineage_columns()},
             dict({column: "" for column in lineage_columns()},
                  **{rank_column("genus"): "8001"}),
         ]
-        problems = validator.check_lineage_columns(rows)
+        problems = validator.check_lineage_coverage(rows)
         assert problems == ["1 of 2 current rows have an empty lineage"]
 
-    def test_none_sentinel_counts_as_empty(self):
-        rows = [{column: "None" for column in lineage_columns()}]
-        assert validator.check_lineage_columns(rows)
+    def test_full_coverage_is_silent(self, work_dir):
+        assert failing(run(work_dir)) == set()
+
+    def test_a_gap_in_coverage_never_fails_even_strict(self, work_dir):
+        rows = read_tsv(work_dir / "assembly_current.tsv")
+        for column in lineage_columns():
+            rows[0][column] = ""
+        write_tsv(work_dir / "assembly_current.tsv", rows, ASSEMBLY_COLUMNS)
+
+        assert failing(run(work_dir)) == {"lineage-coverage"}
+        assert validator.validate_pipeline(work_dir=str(work_dir), strict=True) == 0
+
+    def test_unenriched_rows_are_not_counted_twice(self):
+        # No columns at all is check_lineage_columns's business, not this one.
+        assert validator.check_lineage_coverage([{"genbankAccession": "GCA_1.1"}]) == []
 
 
 # ---------------------------------------------------------------------------
