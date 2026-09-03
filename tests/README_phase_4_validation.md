@@ -144,11 +144,15 @@ milestones disagreeing about the same assembly on real data;
 
 **Still open with Rich** (none of these blocks a run):
 
-1. Are rank **names** coming alongside the taxids? Until they do, higher-rank rows
-   in `taxon_milestone_summary.tsv` carry an empty `scientific_name` unless a
-   taxdump is supplied, so production runs should keep passing `--taxdump_path`
-   until this is settled.
-2. Is the literal `"None"` deliberate? Handled either way.
+1. Is the literal `"None"` deliberate, or a `str(None)` slip? Handled either way.
+2. `speciesTaxId` — Rich has said he will add one alongside the higher ranks.
+   Until it lands, `resolve_to_species` is what attributes a subspecies-level
+   assembly, and without a taxdump such a row is attributed at its own taxid.
+
+**Resolved, so not open:** rank *names* are not needed. Nothing in this
+codebase reads `taxon_milestone_summary.tsv` — it is a GoaT import, and the
+import resolves taxids — so `scientific_name` can stay empty in production and
+a production run does not need `--taxdump_path` for naming alone.
 
 **Resolved 2026-08-29 without asking:** the `*TaxId` columns *are* declared in
 `goat-data` `sources/assembly-data/ncbi_datasets_eukaryota.types.yaml` on
