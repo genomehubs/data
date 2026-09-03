@@ -158,9 +158,10 @@ does reach the TSV, and `lineage-columns` should pass on a production run.
 It stays a warning rather than an error because the dev case — a run off a local
 taxdump, with no lineage columns — is still legitimate.
 
-There is still no `speciesTaxId` upstream, so `resolve_to_species` stays: without a
-taxdump, a subspecies-level assembly is attributed at its own taxid rather than
-being collapsed onto its species. The flow prints that caveat when it runs without
+There is still no `speciesTaxId` upstream — Rich has said one is coming, and it
+had not landed when this was last checked on 2026-09-03 — so `resolve_to_species`
+stays: without a taxdump, a subspecies-level assembly is attributed at its own
+taxid rather than being collapsed onto its species. The flow prints that caveat when it runs without
 a taxdump.
 
 ## Step 3: the staged full run
