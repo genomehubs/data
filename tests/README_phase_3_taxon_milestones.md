@@ -10,6 +10,10 @@ Phase 3 is **two modules**:
   taxdump (`nodes.dmp` + `names.dmp`) into the taxonomy contract. In production
   the lineage is attached to assembly rows upstream (NCBI-dataset integration),
   so this module is used only to run the pipeline end-to-end without that join.
+  Phase 4 added `flows/lib/assembly_lineage.py`, which reads that upstream
+  contract — the `{rank}TaxId` columns — so `--taxdump_path` is optional in
+  production. See [`README_phase_4_validation.md`](README_phase_4_validation.md)
+  for what each source supplies and what it cannot.
 - **`flows/lib/compute_taxon_milestones.py`** — a single chronological sweep
   that computes the two milestone deliverables — **species milestones** and
   **higher-rank milestones** — then writes `taxon_milestone_summary.tsv`. The
@@ -107,8 +111,10 @@ EBP quality standard*, regardless of who submitted.
 
 ```
 1. Load current + historical rows (csv module).
-2. Per row: resolve taxId → species taxid (resolve_to_species); skip+log if
-   unresolvable. Attach species taxid + its canonical lineage.
+2. Per row: resolve taxId → species taxid (resolve_to_species); skip if
+   unresolvable (the skips are counted and summarised, not printed per row).
+   Attach species taxid + its canonical lineage — the lineage the row carries
+   in its {rank}TaxId columns where it has them, the taxdump lineage otherwise.
 3. Sort ALL dated rows by (releaseDate, accession) ascending — one global sort.
    Rows with empty releaseDate are excluded from milestone dates but still
    counted in total_assemblies; the count is logged.

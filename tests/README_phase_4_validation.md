@@ -23,6 +23,8 @@ Phases 0–3 must have run at least once before the validators have anything to 
 | `tests/validate_no_ncbi_fetches.py` | Runs the daily version parse with sockets and subprocesses blocked |
 | `tests/test_assembly_lineage.py` | Unit tests for the column contract and the production path |
 | `tests/test_phase_4_validators.py` | Unit tests for both validators, including each failure mode |
+| `tests/test_two_day_simulation.py` | Runs all four phases in sequence over one working directory |
+| `tests/test_assembly_summary.py` | Unit tests for Phase 2.2, which had none |
 | `.github/workflows/pytest.yml` | Runs `pytest tests/` on every pull request |
 
 ## Step 1: `validate_pipeline.py`
@@ -54,9 +56,10 @@ under `--strict`, and a **note** never fails it.
 
 `lineage-columns` is a warning, because a dev run off a local taxdump
 legitimately has no lineage columns, while a production run should treat their
-absence as fatal — `print_to_tsv` writes only the columns the types YAML
-declares, so the enrichment can be a silent no-op upstream and this is the check
-that catches it. `lineage-coverage` is a note: some assemblies will always sit
+absence as fatal — the write path (`write_to_tsv` -> `gh_utils.write_tsv` ->
+`print_to_tsv`) emits only the columns the types YAML declares, so the
+enrichment can be a silent no-op upstream and this is the check that catches
+it. `lineage-coverage` is a note: some assemblies will always sit
 on a taxid the upstream lookup does not cover, so it is a number to watch rather
 than a defect, and a single uncovered row should not fail a 57,000-row run.
 
@@ -102,11 +105,11 @@ as `genusTaxId`, `familyTaxId`, `orderTaxId`, `classTaxId`, `phylumTaxId` and
 is the single place that knows those names — `RANK_COLUMN_TEMPLATE` is a one-line
 repoint if they change.
 
-`compute_taxon_milestones` now has three ways to run:
+`compute_taxon_milestones` now has four ways to run:
 
 | Inputs | Behaviour |
 |---|---|
-| Rows with lineage columns, no `--taxdump_path` | Production. Lineage from the columns; scientific names stay empty; each row is attributed at its own taxid |
+| Rows with lineage columns, no `--taxdump_path` | Production. Lineage from the columns; scientific names stay empty; a row is attributed at its own taxid unless another row names that taxid as an ancestor |
 | `--taxdump_path`, rows without lineage columns | Dev/test, unchanged from Phase 3 |
 | Both | Columns win for lineage; the taxdump supplies names and the subspecies walk |
 | Neither | `SystemExit` naming the columns it looked for |
@@ -122,6 +125,23 @@ Two traps the module handles:
   missing `nodes.jsonl`, warns, and returns rows without the columns. That is what
   the `lineage-columns` check in `validate_pipeline` exists to catch.
 
+**Rank order when registering taxa.** `register_row_taxa` registers every
+ancestor first and only then the row taxids, at rank `species`. The order
+matters for an assembly submitted above species level — "Genus sp." — whose own
+taxid another row names as its genus: registering row taxids first would label
+that taxon a species or a genus depending on which row came first in the file.
+Registered as a genus it has no species ancestor, so the sweep skips it and
+says so — the same thing the taxdump path does with such an assembly today.
+`compute_milestones` collects those skips and prints five with a count, rather
+than one line per row on a 57,000-row input.
+
+**One sentinel, one place.** `assembly_versions_utils.cell` is what every phase
+reads a cell through, so `""` and the literal `"None"` mean the same thing to
+all of them. Phase 2 previously counted `ebpStandardDate: "None"` as an EBP
+metric while Phase 3 did not, which would have left the summary and the
+milestones disagreeing about the same assembly on real data;
+`test_phase_2_and_phase_3_agree_on_the_metric` pins it.
+
 **Still open with Rich** (none of these blocks a run):
 
 1. Are rank **names** coming alongside the taxids? Until they do, higher-rank rows
@@ -129,8 +149,14 @@ Two traps the module handles:
    taxdump is supplied, so production runs should keep passing `--taxdump_path`
    until this is settled.
 2. Is the literal `"None"` deliberate? Handled either way.
-3. Are the `*TaxId` columns declared in the types YAML in `goat-data-main`? If not,
-   the enrichment is a silent no-op and `--strict` validation will say so.
+
+**Resolved 2026-08-29 without asking:** the `*TaxId` columns *are* declared in
+`goat-data` `sources/assembly-data/ncbi_datasets_eukaryota.types.yaml` on
+`origin/main`, first present in release `2026.08.27` — as `genus_taxon_id:
+{header: genusTaxId}` and the same for family through kingdom. So the enrichment
+does reach the TSV, and `lineage-columns` should pass on a production run.
+It stays a warning rather than an error because the dev case — a run off a local
+taxdump, with no lineage columns — is still legitimate.
 
 There is still no `speciesTaxId` upstream, so `resolve_to_species` stays: without a
 taxdump, a subspecies-level assembly is attributed at its own taxid rather than
@@ -157,6 +183,10 @@ any run exercising the gap-fill path discards the backfill it just built.
 2. **Two-day simulation** — snapshot the current TSV to `.previous`, bump a version
    in the JSONL, and run the daily step again, covering the unchanged, +1, skipped
    and new-series diff paths end to end. Re-run both validators.
+
+   The synthetic half of this stage is now a test — `test_two_day_simulation.py`
+   runs all four phases over one working directory on every CI run, so what the
+   staged run adds here is real data, not new coverage of the composition.
 3. **Full backfill** — overnight, checkpointed; Phase 0 resumes from
    `tmp/checkpoints/` if interrupted.
 4. **Full daily + summary + milestones**, then both validators with `--strict`.

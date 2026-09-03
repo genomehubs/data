@@ -395,7 +395,8 @@ def check_in_ranks_valid(milestone_rows: list[dict]) -> list[str]:
 def check_lineage_columns(current_rows: list[dict]) -> list[str]:
     """Check the upstream lineage columns arrived, and arrived populated.
 
-    print_to_tsv writes only the columns declared in the types YAML, so
+    The write path (parse_ncbi_assemblies.write_to_tsv -> gh_utils.write_tsv ->
+    print_to_tsv) emits only the columns declared in the types YAML, so
     enrichment can be a silent no-op upstream. Without these columns Phase 3
     has no production taxonomy source and would quietly fall back.
 
