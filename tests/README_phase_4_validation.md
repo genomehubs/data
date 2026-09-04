@@ -225,7 +225,9 @@ if *nothing* was superseded, which would mean the diff path never fired.
 **`PYTHONUTF8=1` is required on Windows.** `update_ncbi_datasets` decodes the
 `datasets` output with the platform encoding; on a cp1252 machine that fails on
 the first non-Latin-1 byte, and subprocess reports it as a zero exit status
-with `stdout` set to `None`. Drafted for Rich as §0 of `messages_to_rich.md`.
+with `stdout` set to `None`. Not a production concern — Linux runs UTF-8, and
+Python coerces the C locale to it — so the export is the fix rather than a
+patch to the flow.
 3. **Full backfill** — overnight, checkpointed; Phase 0 resumes from
    `tmp/checkpoints/` if interrupted.
 4. **Full daily + summary + milestones**, then both validators with `--strict`.
