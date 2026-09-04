@@ -18,9 +18,12 @@ to reach the milestone (first_assembly_in_ranks / first_metric_in_ranks).
 Writes taxon_milestone_summary.tsv (one row per taxon at any rank) and emits a
 completion event so the rest of the pipeline can react.
 
-Taxonomy source: in production the lineage is attached to assembly rows
-upstream; in dev/test this flow calls load_taxonomy.build_taxonomy on a local
-NCBI taxdump (--taxdump_path).
+Taxonomy source: in production the canonical-rank lineage is attached to
+assembly rows upstream as {rank}TaxId columns, read here via assembly_lineage;
+in dev/test this flow calls load_taxonomy.build_taxonomy on a local NCBI
+taxdump (--taxdump_path). Either source alone is enough to compute milestones,
+and both can be combined: the columns win for lineage, while the taxdump
+supplies the scientific names and the subspecies walk that the columns cannot.
 
 Usage:
     SKIP_PREFECT=true python -m flows.lib.compute_taxon_milestones \\
@@ -30,7 +33,16 @@ Usage:
 import csv
 import os
 
+from flows.lib.assembly_lineage import (
+    LINEAGE_RANKS,
+    get_row_taxid,
+    lineage_columns,
+    register_row_taxa,
+    row_lineage,
+    rows_have_lineage_columns,
+)
 from flows.lib.assembly_versions_utils import (
+    cell,
     get_accession,
     get_version_status,
     open_tsv,
@@ -38,7 +50,7 @@ from flows.lib.assembly_versions_utils import (
     resolve_historical_tsv_path,
 )
 from flows.lib.conditional_import import emit_event, flow
-from flows.lib.load_taxonomy import CANONICAL_RANKS, build_taxonomy
+from flows.lib.load_taxonomy import build_taxonomy
 from flows.lib.shared_args import TAXDUMP_PATH, WORK_DIR, YAML_PATH
 from flows.lib.shared_args import parse_args as _parse_args
 from flows.lib.utils import load_config
@@ -48,8 +60,10 @@ OUTPUT_TSV = "taxon_milestone_summary.tsv"
 # EBP umbrella BioProject — affiliation is membership in this project.
 EBP_BIOPROJECT = "PRJNA533106"
 
-# Levels walked per row, species first then up the canonical lineage.
-LEVELS = ["species"] + ["genus", "family", "order", "class", "phylum", "kingdom"]
+# Levels walked per row, species first then up the canonical lineage.  The
+# higher ranks come from assembly_lineage so the walk cannot drift from the
+# ranks the upstream columns and the taxdump lineage agree on.
+LEVELS = ["species", *LINEAGE_RANKS]
 
 # The four milestones. Each maps to its output column prefix; in_ranks is True
 # for the any-submitter milestones that get a first_*_in_ranks column.
@@ -88,8 +102,7 @@ def _accession(row: dict) -> str:
 
 def _release_date(row: dict) -> str:
     """Return the releaseDate, treating the literal 'None' as empty."""
-    value = row.get("releaseDate") or ""
-    return "" if value == "None" else value
+    return cell(row, "releaseDate")
 
 
 def _version_status(row: dict) -> str:
@@ -105,8 +118,7 @@ def _is_affiliated(row: dict) -> bool:
 
 def _has_metric(row: dict) -> bool:
     """Return True if the row meets the EBP quality standard."""
-    value = row.get("ebpStandardDate") or ""
-    return value != "" and value != "None"
+    return bool(cell(row, "ebpStandardDate"))
 
 
 def milestone_predicate(row: dict, key: str) -> bool:
@@ -172,6 +184,23 @@ def resolve_to_species(taxid: int, taxonomy: dict) -> int | None:
     return None
 
 
+def print_unresolved(unresolved: list[tuple]) -> None:
+    """Summarise the rows no taxon could be resolved for.
+
+    Args:
+        unresolved: (taxid, accession) pairs skipped by the sweep.
+    """
+    if not unresolved:
+        return
+
+    print(f"  Warning: {len(unresolved)} rows have no species to attribute to.")
+    print("  Submitted above species level, or absent from the taxonomy:")
+    for taxid, accession in unresolved[:5]:
+        print(f"    taxId {taxid} ({accession})")
+    if len(unresolved) > 5:
+        print(f"    ... and {len(unresolved) - 5} more")
+
+
 def compute_milestones(rows: list[dict], taxonomy: dict) -> tuple[dict, dict]:
     """Run the single chronological sweep over all assembly rows.
 
@@ -190,25 +219,28 @@ def compute_milestones(rows: list[dict], taxonomy: dict) -> tuple[dict, dict]:
     # Attach the resolved species taxid + lineage to each row; drop unresolvable.
     enriched = []
     skipped = 0
-    empty_date = 0
+    unresolved = []
     for row in rows:
-        raw_taxid = row.get("taxId") or row.get("taxid") or ""
-        try:
-            taxid = int(raw_taxid)
-        except (ValueError, TypeError):
+        taxid = get_row_taxid(row)
+        if taxid is None:
             skipped += 1
             continue
         species_taxid = resolve_to_species(taxid, taxonomy)
         if species_taxid is None:
-            print(f"  Skipping taxId {raw_taxid} ({_accession(row)}): no species ancestor")
+            # Assemblies submitted above species level land here, as do taxids
+            # the taxonomy source does not cover.  Collected rather than
+            # printed per row: a full run has tens of thousands of rows.
+            unresolved.append((taxid, _accession(row)))
             skipped += 1
             continue
         node = taxonomy[species_taxid]
+        # The lineage upstream attached to the row wins where present; the
+        # taxdump-derived lineage is the dev/test fallback.
         enriched.append(
             {
                 "row": row,
                 "species_taxid": species_taxid,
-                "lineage": node["lineage"],
+                "lineage": row_lineage(row) or node["lineage"],
                 "date": _release_date(row),
                 "accession": _accession(row),
             }
@@ -283,7 +315,11 @@ def compute_milestones(rows: list[dict], taxonomy: dict) -> tuple[dict, dict]:
     for sp in species_extra:
         ensure_taxon(sp)
 
-    print(f"  Resolved {len(enriched)} rows ({skipped} skipped); {empty_date} with empty releaseDate excluded from dates")
+    print_unresolved(unresolved)
+    print(
+        f"  Resolved {len(enriched)} rows ({skipped} skipped); "
+        f"{empty_date} with empty releaseDate excluded from dates"
+    )
     print(f"  Touched {len(taxa)} taxa across all ranks")
     return taxa, species_extra
 
@@ -344,8 +380,9 @@ def compute_taxon_milestones(
     Args:
         work_dir: Directory containing the current and historical TSVs;
             output is written there too.
-        taxdump_path: Dev/test NCBI taxdump directory. In production the
-            lineage arrives via the upstream contract and this is omitted.
+        taxdump_path: NCBI taxdump directory. Optional once the assembly
+            rows carry the upstream {rank}TaxId columns; still required to
+            resolve scientific names and subspecies-level taxids.
         yaml_path: Optional YAML config naming the current TSV.
     """
     config = load_config(config_file=yaml_path) if yaml_path else None
@@ -358,17 +395,7 @@ def compute_taxon_milestones(
     print("TAXON MILESTONE COMPUTATION")
     print(f"{separator}\n")
 
-    print("[1/4] Loading taxonomy...")
-    if not taxdump_path:
-        # Production path would attach lineage upstream; without it there is
-        # nothing to resolve against, so fail loudly rather than silently.
-        raise SystemExit(
-            "No taxonomy source: pass --taxdump_path for the dev/test path, "
-            "or supply upstream lineage in production."
-        )
-    taxonomy = build_taxonomy(taxdump_path)
-
-    print("\n[2/4] Loading assemblies...")
+    print("[1/4] Loading assemblies...")
     rows = load_assemblies(current_tsv, historical_tsv)
 
     if not rows:
@@ -382,6 +409,23 @@ def compute_taxon_milestones(
             payload={"taxa": 0, "status": "no_op"},
         )
         return
+
+    print("\n[2/4] Resolving taxonomy...")
+    taxonomy = build_taxonomy(taxdump_path) if taxdump_path else {}
+    if not taxdump_path and not rows_have_lineage_columns(rows):
+        # Neither source is present, so no row can be attributed to a taxon:
+        # fail loudly rather than writing an empty summary.
+        columns = ", ".join(lineage_columns())
+        raise SystemExit(
+            "No taxonomy source: pass --taxdump_path, or supply assembly "
+            f"rows carrying the upstream lineage columns ({columns})."
+        )
+    stats = register_row_taxa(taxonomy, rows)
+    print(f"  Rows carrying an upstream lineage: {stats['rows_with_lineage']}")
+    print(f"  Taxonomy nodes added from those rows: {stats['nodes_added']}")
+    if not taxdump_path:
+        print("  No taxdump: scientific names stay empty, and subspecies-level")
+        print("  rows are attributed at their own taxid, not at their species.")
 
     print("\n[3/4] Computing milestones (single chronological sweep)...")
     taxa, species_extra = compute_milestones(rows, taxonomy)
