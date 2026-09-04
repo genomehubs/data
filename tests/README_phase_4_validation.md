@@ -19,12 +19,13 @@ Phases 0–3 must have run at least once before the validators have anything to 
 |---|---|
 | `flows/lib/assembly_lineage.py` | Reads the upstream `{rank}TaxId` columns: one rank→column mapping, the two absent sentinels, and `register_row_taxa` to turn row lineages into taxonomy nodes |
 | `flows/lib/compute_taxon_milestones.py` | Uses the row lineage where present and the taxdump otherwise; no longer requires `--taxdump_path` |
-| `tests/validate_pipeline.py` | Eight cross-file checks over the four output TSVs |
+| `tests/validate_pipeline.py` | Nine cross-file checks over the four output TSVs |
 | `tests/validate_no_ncbi_fetches.py` | Runs the daily version parse with sockets and subprocesses blocked |
 | `tests/test_assembly_lineage.py` | Unit tests for the column contract and the production path |
 | `tests/test_phase_4_validators.py` | Unit tests for both validators, including each failure mode |
 | `tests/test_two_day_simulation.py` | Runs all four phases in sequence over one working directory |
 | `tests/test_assembly_summary.py` | Unit tests for Phase 2.2, which had none |
+| `tests/staged_run.py` | Drives stages 1 and 2 of the staged run against real NCBI data |
 | `.github/workflows/pytest.yml` | Runs `pytest tests/` on every pull request |
 
 ## Step 1: `validate_pipeline.py`
@@ -36,7 +37,7 @@ python -m tests.validate_pipeline --work_dir tmp --yaml_path <config> --strict
 
 It resolves the current-TSV filename the same way the flows do — from
 `config.meta["file_name"]` when `--yaml_path` is given, by discovery in `work_dir`
-otherwise — then loads all four outputs and runs eight checks:
+otherwise — then loads all four outputs and runs nine checks:
 
 | Check | Assertion |
 |---|---|
@@ -47,6 +48,7 @@ otherwise — then loads all four outputs and runs eight checks:
 | `summary-completeness` | every base accession is summarised, and no summary row is stale |
 | `milestone-date-ordering` | the nested milestone dates never invert |
 | `in-ranks-validity` | every `first_*_in_ranks` value is a canonical rank |
+| `assembly-id-coverage` | whether a source carries an assembly-ID column at all |
 | `lineage-columns` | the upstream `{rank}TaxId` columns arrived, populated |
 | `lineage-coverage` | how many current rows carry no lineage at all |
 
@@ -192,6 +194,38 @@ any run exercising the gap-fill path discards the backfill it just built.
    The synthetic half of this stage is now a test — `test_two_day_simulation.py`
    runs all four phases over one working directory on every CI run, so what the
    staged run adds here is real data, not new coverage of the composition.
+
+Stages 1 and 2 are scripted in `tests/staged_run.py`:
+
+```bash
+export PATH="<the env holding the datasets CLI>/bin:$PATH"
+export PYTHONUTF8=1     # see the note below
+python -m tests.staged_run --work_dir tmp/staged --taxdump_path <taxdump>
+```
+
+Everything lands under `--work_dir`, one directory per stage. The default slice
+is Malacostraca (6681): 207 assemblies, 18 of them above version 1, one at v4 —
+small enough to run in minutes and rich enough that the backfill has real work.
+A clade whose assemblies are all at v1 exercises nothing.
+
+Stage 2 needs a yesterday that differs from today. Rather than fabricate
+tomorrow — which would leave the gap-fill asking NCBI for accessions that do
+not exist — it fabricates *yesterday*, rewinding the multi-version assemblies
+by one version. Every version the pipeline then goes looking for is one NCBI
+actually has.
+
+The rewound count and the supersession count are not expected to match. The
+rewind applies to the JSONL, one record per assembly, while the current TSV is
+keyed on `genbankAccession`, so a RefSeq base folds into its GenBank row and
+never appears as a base of its own. A rewind can also leave the parser holding
+two versions of one base, and the diff is then right to call that base
+unchanged — the pipeline already knew the newer version. The stage fails only
+if *nothing* was superseded, which would mean the diff path never fired.
+
+**`PYTHONUTF8=1` is required on Windows.** `update_ncbi_datasets` decodes the
+`datasets` output with the platform encoding; on a cp1252 machine that fails on
+the first non-Latin-1 byte, and subprocess reports it as a zero exit status
+with `stdout` set to `None`. Drafted for Rich as §0 of `messages_to_rich.md`.
 3. **Full backfill** — overnight, checkpointed; Phase 0 resumes from
    `tmp/checkpoints/` if interrupted.
 4. **Full daily + summary + milestones**, then both validators with `--strict`.

@@ -158,12 +158,27 @@ class TestAssemblyIdUniqueness:
         write_tsv(work_dir / "assembly_historical.tsv", rows, ASSEMBLY_COLUMNS)
         assert "assembly-id-uniqueness" in failing(run(work_dir))
 
-    def test_rows_without_an_assembly_id_are_reported(self, work_dir):
+    def test_a_row_missing_an_id_among_rows_that_have_one(self, work_dir):
         rows = read_tsv(work_dir / "assembly_current.tsv")
         rows[0]["assemblyID"] = ""
         write_tsv(work_dir / "assembly_current.tsv", rows, ASSEMBLY_COLUMNS)
         problems = validator.check_assembly_ids_unique(rows, [])
-        assert problems == ["1 rows carry no assembly ID"]
+        assert problems == [
+            "1 of 3 current rows carry no assembly ID while the rest do"
+        ]
+
+    def test_a_source_with_no_id_column_is_a_note_not_a_failure(self, work_dir):
+        # test/ncbi_datasets.types.yaml excludes the assembly_id identifier,
+        # so a real slice run produces a current TSV with no such column.
+        keep = [c for c in ASSEMBLY_COLUMNS if c != "assemblyID"]
+        rows = [
+            {column: row[column] for column in keep}
+            for row in read_tsv(work_dir / "assembly_current.tsv")
+        ]
+        write_tsv(work_dir / "assembly_current.tsv", rows, keep)
+
+        assert failing(run(work_dir)) == {"assembly-id-coverage"}
+        assert validator.validate_pipeline(work_dir=str(work_dir), strict=True) == 0
 
     def test_lowercase_spelling_still_collides(self):
         # get_assembly_id reads assemblyID and assemblyId alike, so the same
@@ -200,6 +215,12 @@ class TestVersionGaps:
 
 
 class TestReferentialIntegrity:
+    def test_the_none_sentinel_is_not_a_referent(self):
+        # Phase 0 rows have no supersession values, and the GenomeHubs write
+        # path stringifies that absence as "None".
+        rows = [{"genbankAccession": "GCA_1.1", "superseded_by": "None"}]
+        assert validator.check_superseded_by_resolves(rows) == []
+
     def test_dangling_superseded_by(self, work_dir):
         rows = read_tsv(work_dir / "assembly_historical.tsv")
         rows[0]["superseded_by"] = "GCA_999999999.9"

@@ -47,7 +47,9 @@ from flows.lib.assembly_lineage import (  # noqa: E402
     rows_have_lineage_columns,
 )
 from flows.lib.assembly_versions_utils import (  # noqa: E402
+    COL_ASSEMBLY_ID,
     COL_SUPERSEDED_BY,
+    cell,
     get_accession,
     get_assembly_id,
     open_tsv,
@@ -212,15 +214,21 @@ def check_assembly_ids_unique(
         current_rows (list): Rows from the current TSV.
         historical_rows (list): Rows from the historical TSV.
 
+    A source that carries no assembly-ID column at all is a decision made in
+    its types YAML, not a defect, and is reported by assembly-id-coverage
+    instead.  A row missing an ID where its neighbours have one is a defect,
+    and is reported here.
+
     Returns:
-        list: One problem per duplicated ID, plus a count of ID-less rows.
+        list: One problem per duplicated ID, plus one per source holding a
+            mix of rows with and without an ID.
     """
     problems = []
     seen: dict[str, str] = {}
     duplicates: dict[str, list[str]] = defaultdict(list)
-    missing = 0
 
     for label, rows in [("current", current_rows), ("historical", historical_rows)]:
+        missing = 0
         for row in rows:
             assembly_id = get_assembly_id(row)
             if not assembly_id:
@@ -232,6 +240,12 @@ def check_assembly_ids_unique(
             else:
                 seen[assembly_id] = where
 
+        if missing and missing < len(rows):
+            problems.append(
+                f"{missing} of {len(rows)} {label} rows carry no assembly ID "
+                "while the rest do"
+            )
+
     for assembly_id, places in sorted(duplicates.items()):
         first = seen[assembly_id]
         problems.append(
@@ -239,9 +253,34 @@ def check_assembly_ids_unique(
             f"{first}, {', '.join(places)}"
         )
 
-    if missing:
-        problems.append(f"{missing} rows carry no assembly ID")
+    return problems
 
+
+def check_assembly_id_coverage(
+    current_rows: list[dict], historical_rows: list[dict]
+) -> list[str]:
+    """Report a source whose rows carry no assembly-ID column at all.
+
+    Which identifiers reach the TSV is a types-YAML decision: the config in
+    test/ excludes assembly_id, so a run against it produces a current TSV
+    with no such column.  That is worth stating -- nothing can be joined on
+    the identifier -- without failing a run that was configured that way on
+    purpose.
+
+    Args:
+        current_rows (list): Rows from the current TSV.
+        historical_rows (list): Rows from the historical TSV.
+
+    Returns:
+        list: One line per source that carries no assembly ID at all.
+    """
+    problems = []
+    for label, rows in [("current", current_rows), ("historical", historical_rows)]:
+        if rows and not any(get_assembly_id(row) for row in rows):
+            problems.append(
+                f"no {label} row carries an assembly ID ({COL_ASSEMBLY_ID} is "
+                "not in the header), so the two files cannot be joined on it"
+            )
     return problems
 
 
@@ -293,7 +332,9 @@ def check_superseded_by_resolves(assembly_rows: list[dict]) -> list[str]:
     known = {get_accession(row) for row in assembly_rows if get_accession(row)}
 
     for row in assembly_rows:
-        referent = (row.get(COL_SUPERSEDED_BY) or "").strip()
+        # Read through cell: the Phase 0 backfill has no supersession values,
+        # and the GenomeHubs write path stringifies that absence as "None".
+        referent = cell(row, COL_SUPERSEDED_BY)
         if not referent:
             continue
         accession = get_accession(row) or "unknown accession"
@@ -487,6 +528,11 @@ def run_checks(outputs: dict) -> list[dict]:
                 "name": "assembly-id-uniqueness",
                 "severity": ERROR,
                 "problems": check_assembly_ids_unique(current_rows, historical_rows),
+            },
+            {
+                "name": "assembly-id-coverage",
+                "severity": NOTE,
+                "problems": check_assembly_id_coverage(current_rows, historical_rows),
             },
             {
                 "name": "version-gaps",
