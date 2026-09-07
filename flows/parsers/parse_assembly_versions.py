@@ -16,33 +16,59 @@ from glob import glob
 from pathlib import Path
 from typing import Optional
 
-from flows.lib.assembly_versions_utils import parse_accession
+from flows.lib.assembly_versions_utils import (
+    COL_ASSEMBLY_ID,
+    COL_SUPERSEDED_BY,
+    COL_SUPERSEDED_BY_VERSION,
+    COL_SUPERSEDED_DATE,
+    COL_VERSION_STATUS,
+    HISTORICAL_YAML_NAME,
+    canonicalize_columns,
+    get_accession,
+    get_assembly_id,
+    open_tsv,
+    parse_accession,
+    resolve_current_tsv_paths,
+    resolve_historical_tsv_path,
+    resolve_historical_yaml_path,
+)
 from flows.lib.conditional_import import flow
-from flows.lib.shared_args import INPUT_PATH
+from flows.lib.shared_args import INPUT_PATH, YAML_PATH
 from flows.lib.shared_args import parse_args as _parse_args
 from flows.lib.shared_args import required
-from flows.lib.utils import Parser
+from flows.lib.utils import Config, Parser, load_config
 
-def derive_assembly_version_paths(input_path: str) -> tuple[str, str]:
+DELIMITER = "\t"
+
+
+def derive_assembly_version_paths(
+    input_path: str, config: Optional[Config] = None
+) -> tuple[str, str]:
     """Derive previous_tsv and historical_tsv paths from the input JSONL path.
 
-    Both files are assumed to live alongside the JSONL in the same directory,
-    following the same convention used by parse_ncbi_assemblies.
+    Both files live alongside the JSONL, following the convention used by
+    parse_ncbi_assemblies.  The current-TSV filename — and therefore the name
+    of its ".previous" snapshot — comes from config.meta["file_name"] when a
+    config is supplied, so nothing here hardcodes it.
 
     Args:
         input_path (str): Path to the current assembly_data_report.jsonl.
+        config (Config, optional): Loaded YAML config naming the current TSV.
 
     Returns:
         tuple: (previous_tsv, historical_tsv) absolute paths.
     """
     work_dir = os.path.dirname(os.path.abspath(input_path))
-    previous_tsv = os.path.join(work_dir, "assembly_current.tsv.previous")
-    historical_tsv = os.path.join(work_dir, "assembly_historical.tsv")
-    return previous_tsv, historical_tsv
+    _, previous_tsv, _ = resolve_current_tsv_paths(work_dir, config=config)
+    return previous_tsv, resolve_historical_tsv_path(work_dir)
 
 
 def load_previous_parsed_by_base(previous_tsv: str) -> dict[str, dict[int, dict]]:
     """Load previous parsed results indexed by base accession and version.
+
+    The snapshot is opened through open_tsv, so a gzipped snapshot of a
+    gzipped current TSV is read transparently, and the accession is read via
+    get_accession rather than assuming a single column name.
 
     Args:
         previous_tsv (str): Path to assembly_current.tsv from the previous run.
@@ -55,9 +81,11 @@ def load_previous_parsed_by_base(previous_tsv: str) -> dict[str, dict[int, dict]
     previous_by_base: dict[str, dict[int, dict]] = {}
 
     try:
-        with open(previous_tsv, encoding="utf-8") as f:
-            for row in csv.DictReader(f, delimiter="\t"):
-                accession = row["accession"]
+        with open_tsv(previous_tsv) as f:
+            for row in csv.DictReader(f, delimiter=DELIMITER):
+                accession = get_accession(row)
+                if not accession:
+                    continue
                 base_acc, version = parse_accession(accession)
                 if base_acc not in previous_by_base:
                     previous_by_base[base_acc] = {}
@@ -90,16 +118,24 @@ def build_superseded_row(
         new_version (int): Version number of the superseding assembly.
         release_date (str): Release date of the superseding assembly.
 
+    Emits the canonical camelCase column names declared in
+    assembly_historical.types.yaml, so Phase 1 rows are indistinguishable
+    from Phase 0 rows in the historical TSV.  The copied row is canonicalized
+    first: it comes from the current TSV, which spells the assembly ID
+    ``assemblyId``, and leaving that alongside the ``assemblyID`` set here
+    would put two disagreeing assembly-ID columns into the output.
+
     Returns:
-        dict: Updated row with version_status, assembly_id, and superseded_by fields.
+        dict: Updated row with versionStatus, assemblyID and the three
+            supersession columns set.
     """
-    base_acc, _ = parse_accession(previous_row["accession"])
-    row = previous_row.copy()
-    row["version_status"] = "superseded"
-    row["assembly_id"] = f"{base_acc}_{previous_version}"
-    row["superseded_by"] = new_accession
-    row["superseded_by_version"] = new_version
-    row["superseded_date"] = release_date
+    base_acc, _ = parse_accession(get_accession(previous_row))
+    row = canonicalize_columns(previous_row)
+    row[COL_VERSION_STATUS] = "superseded"
+    row[COL_ASSEMBLY_ID] = f"{base_acc}_{previous_version}"
+    row[COL_SUPERSEDED_BY] = new_accession
+    row[COL_SUPERSEDED_BY_VERSION] = new_version
+    row[COL_SUPERSEDED_DATE] = release_date
     return row
 
 
@@ -189,37 +225,93 @@ def identify_newly_superseded(
     return newly_superseded, missing_versions
 
 
+def merge_fieldnames(
+    rows: list[dict],
+    preferred_order: Optional[list[str]] = None,
+    allowed: Optional[set] = None,
+) -> list[str]:
+    """Build an output header covering every key present in any row.
+
+    Deriving the header from a single arbitrary row silently drops any column
+    that row happens to lack, so the union is taken across all rows.  Columns
+    are emitted in preferred_order first (the YAML header order, or the order
+    already on disk), then any remaining keys in first-seen order.
+
+    Args:
+        rows (list): All row dicts destined for the output file.
+        preferred_order (list, optional): Column order to honour where
+            possible.
+        allowed (set, optional): Columns permitted in the output.  Keys
+            outside it are dropped.  Defaults to no restriction, which keeps
+            the union whole.
+
+    Returns:
+        list: Ordered fieldnames covering the union of all row keys.
+    """
+    union: dict[str, None] = {}
+    for row in rows:
+        for key in row:
+            if allowed is None or key in allowed:
+                union.setdefault(key, None)
+
+    order = list(preferred_order or [])
+    ordered = [col for col in order if col in union]
+    ordered += [col for col in union if col not in set(order)]
+    return ordered
+
+
 def append_superseded_to_tsv(
-    newly_superseded: list[dict], historical_tsv: str
+    newly_superseded: list[dict],
+    historical_tsv: str,
+    headers: Optional[list[str]] = None,
 ) -> None:
-    """Append newly superseded rows to the historical TSV, deduplicating by assembly_id.
+    """Merge newly superseded rows into the historical TSV, keyed by assembly ID.
 
     Reads the existing file if present, merges new rows (new rows take
-    precedence on duplicate assembly_id), and writes the combined result back.
+    precedence on duplicate assembly ID), and writes the combined result back.
+    The output header is the union of the columns across all rows, so merging
+    Phase 0 and Phase 1 row sets cannot silently drop a column.
+
+    When headers are supplied they also bound the schema: a new row is written
+    under the declared columns plus whatever is already on disk, and nothing
+    else.  Phase 1 rows are copied wholesale from the current TSV, whose
+    schema is upstream's rather than this one, so without that bound every
+    current-only column leaks into the historical TSV.  Columns already in the
+    file stay in it either way — F3 is about never dropping those.
 
     Args:
         newly_superseded (list): Row dicts from identify_newly_superseded.
         historical_tsv (str): Path to assembly_historical.tsv.
+        headers (list, optional): The declared schema, i.e. config.headers
+            from assembly_historical.types.yaml.  Sets both the column order
+            and the bound above.  Defaults to the order already present in the
+            file on disk, unbounded.
     """
     if not newly_superseded:
         print("  No newly superseded versions to add.")
         return
 
     existing: dict[str, dict] = {}
+    file_order: list[str] = []
     historical_path = Path(historical_tsv)
 
     if historical_path.exists():
-        with open(historical_tsv, encoding="utf-8") as f:
-            for row in csv.DictReader(f, delimiter="\t"):
-                existing[row["assembly_id"]] = dict(row)
+        with open_tsv(historical_tsv) as f:
+            reader = csv.DictReader(f, delimiter=DELIMITER)
+            for row in reader:
+                existing[get_assembly_id(row)] = dict(row)
+            file_order = list(reader.fieldnames or [])
 
     for row in newly_superseded:
-        existing[row["assembly_id"]] = row
+        existing[get_assembly_id(row)] = row
 
-    fieldnames = list(next(iter(existing.values())).keys())
+    allowed = set(headers) | set(file_order) if headers else None
+    fieldnames = merge_fieldnames(
+        list(existing.values()), headers or file_order, allowed=allowed
+    )
     with open(historical_tsv, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
-            f, fieldnames=fieldnames, delimiter="\t", extrasaction="ignore"
+            f, fieldnames=fieldnames, delimiter=DELIMITER, extrasaction="ignore"
         )
         writer.writeheader()
         writer.writerows(existing.values())
@@ -241,7 +333,10 @@ def print_superseded_summary(newly_superseded: list[dict]) -> None:
     print(f"  Found: {len(newly_superseded)} newly superseded versions.")
     print("  Examples:")
     for row in newly_superseded[:5]:
-        print(f"    {row['accession']} -> superseded by v{row['superseded_by_version']}")
+        print(
+            f"    {get_accession(row)} -> "
+            f"superseded by v{row[COL_SUPERSEDED_BY_VERSION]}"
+        )
     if len(newly_superseded) > 5:
         print(f"    ... and {len(newly_superseded) - 5} more")
 
@@ -273,6 +368,7 @@ def parse_assembly_versions(
     new_jsonl: str,
     previous_tsv: str,
     historical_tsv: str,
+    historical_headers: Optional[list[str]] = None,
 ) -> dict:
     """Daily incremental update of the historical assembly TSV.
 
@@ -283,6 +379,8 @@ def parse_assembly_versions(
         new_jsonl (str): Path to the current assembly_data_report.jsonl.
         previous_tsv (str): Path to assembly_current.tsv from the previous run.
         historical_tsv (str): Path to assembly_historical.tsv to update.
+        historical_headers (list, optional): Preferred column order for the
+            historical TSV.  Defaults to the order already on disk.
 
     Returns:
         dict: Summary with keys newly_superseded_count, missing_versions_count,
@@ -311,7 +409,9 @@ def parse_assembly_versions(
     print_missing_versions_warning(missing)
 
     print("\n[3/3] Updating historical TSV...")
-    append_superseded_to_tsv(newly_superseded, historical_tsv)
+    append_superseded_to_tsv(
+        newly_superseded, historical_tsv, headers=historical_headers
+    )
 
     print(f"\n{separator}")
     print(
@@ -328,6 +428,58 @@ def parse_assembly_versions(
     }
 
 
+def load_assembly_versions_config(working_yaml: Optional[str]) -> Optional[Config]:
+    """Load the parser config, returning None when it is unavailable.
+
+    The config is only used to resolve the current-TSV filename, so a missing
+    or unreadable YAML degrades to filename discovery in work_dir rather than
+    failing the run.
+
+    Args:
+        working_yaml (str, optional): Path to the working YAML file.
+
+    Returns:
+        Config or None: Loaded config, or None when it could not be loaded.
+    """
+    if not working_yaml or not os.path.exists(working_yaml):
+        return None
+    try:
+        return load_config(config_file=working_yaml)
+    except Exception as e:
+        print(f"  Warning: could not load {working_yaml} ({e});")
+        print("  falling back to filename discovery in work_dir.")
+        return None
+
+
+def load_historical_headers(work_dir: str) -> Optional[list[str]]:
+    """Load the declared historical schema, returning None when unavailable.
+
+    The headers set the column order of assembly_historical.tsv and bound
+    which columns a Phase 1 row may contribute, so that a row copied from the
+    current TSV cannot widen the file with upstream-only columns.  Every
+    failure degrades to None — the file is then written in the order already
+    on disk, exactly as before — because a missing schema is not a reason to
+    fail a daily run.
+
+    Args:
+        work_dir (str): Directory holding the pipeline files.
+
+    Returns:
+        list or None: Declared column order from the historical types YAML.
+    """
+    yaml_path = resolve_historical_yaml_path(work_dir)
+    if not yaml_path:
+        print(f"  Note: {HISTORICAL_YAML_NAME} not found;")
+        print("  using the column order already on disk.")
+        return None
+    try:
+        return list(load_config(config_file=yaml_path).headers)
+    except Exception as e:
+        print(f"  Warning: could not load {yaml_path} ({e});")
+        print("  using the column order already on disk.")
+        return None
+
+
 def parse_assembly_versions_wrapper(
     working_yaml: str,
     work_dir: str,
@@ -337,12 +489,13 @@ def parse_assembly_versions_wrapper(
 ) -> None:
     """Wrapper matching the fetch_parse_validate parser signature.
 
-    Derives the previous TSV and historical TSV paths from work_dir and
-    delegates to parse_assembly_versions.
+    Loads working_yaml so the current-TSV filename — and the ".previous"
+    snapshot derived from it — comes from config.meta["file_name"] rather than
+    a hardcoded constant, then delegates to parse_assembly_versions.
 
     Args:
-        working_yaml (str): Path to the working YAML file (unused; accepted
-            for pipeline compatibility).
+        working_yaml (str): Path to the working YAML file, used to resolve the
+            current-TSV filename and its compression.
         work_dir (str): Path to the working directory containing the JSONL,
             the previous TSV, and the historical TSV.
         append (bool): Unused; accepted for pipeline compatibility.
@@ -357,11 +510,15 @@ def parse_assembly_versions_wrapper(
     if len(paths) > 1:
         raise ValueError(f"More than one jsonl file found in {work_dir}")
 
-    previous_tsv, historical_tsv = derive_assembly_version_paths(paths[0])
+    config = load_assembly_versions_config(working_yaml)
+    previous_tsv, historical_tsv = derive_assembly_version_paths(
+        paths[0], config=config
+    )
     results = parse_assembly_versions(
         new_jsonl=paths[0],
         previous_tsv=previous_tsv,
         historical_tsv=historical_tsv,
+        historical_headers=load_historical_headers(work_dir),
     )
 
     if results["missing_versions_count"] > 0:
@@ -382,14 +539,20 @@ def plugin() -> Parser:
 
 if __name__ == "__main__":
     args = _parse_args(
-        [required(INPUT_PATH)],
+        [required(INPUT_PATH), YAML_PATH],
         description="Daily incremental update of historical assembly records",
     )
-    previous_tsv, historical_tsv = derive_assembly_version_paths(args.input_path)
+    config = load_assembly_versions_config(getattr(args, "yaml_path", None))
+    previous_tsv, historical_tsv = derive_assembly_version_paths(
+        args.input_path, config=config
+    )
     results = parse_assembly_versions(
         new_jsonl=args.input_path,
         previous_tsv=previous_tsv,
         historical_tsv=historical_tsv,
+        historical_headers=load_historical_headers(
+            os.path.dirname(os.path.abspath(historical_tsv))
+        ),
     )
     print(f"Summary: superseded={results['newly_superseded_count']}, "
           f"missing={results['missing_versions_count']}")

@@ -136,6 +136,17 @@ attributes:
   submitter:
     header: submitter
     path: assemblyInfo.submitter
+  # Supersession metadata stamped by the Phase 1 daily parser.  Declared here
+  # so the columns survive the GenomeHubs write path instead of being dropped.
+  superseded_by:
+    header: superseded_by
+    path: processedAssemblyInfo.supersededBy
+  superseded_by_version:
+    header: superseded_by_version
+    path: processedAssemblyInfo.supersededByVersion
+  superseded_date:
+    header: superseded_date
+    path: processedAssemblyInfo.supersededDate
   ungapped_span:
     header: totalUngappedLength
     path: assemblyStats.totalUngappedLength

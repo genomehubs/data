@@ -30,13 +30,19 @@ Usage:
 import csv
 import os
 
+from flows.lib.assembly_versions_utils import (
+    get_accession,
+    get_version_status,
+    open_tsv,
+    resolve_current_tsv_paths,
+    resolve_historical_tsv_path,
+)
 from flows.lib.conditional_import import emit_event, flow
 from flows.lib.load_taxonomy import CANONICAL_RANKS, build_taxonomy
-from flows.lib.shared_args import TAXDUMP_PATH, WORK_DIR
+from flows.lib.shared_args import TAXDUMP_PATH, WORK_DIR, YAML_PATH
 from flows.lib.shared_args import parse_args as _parse_args
+from flows.lib.utils import load_config
 
-CURRENT_TSV = "assembly_current.tsv"
-HISTORICAL_TSV = "assembly_historical.tsv"
 OUTPUT_TSV = "taxon_milestone_summary.tsv"
 
 # EBP umbrella BioProject — affiliation is membership in this project.
@@ -77,7 +83,7 @@ OUTPUT_FIELDNAMES = [
 
 def _accession(row: dict) -> str:
     """Return the assembly accession, normalised across phases."""
-    return row.get("accession") or row.get("genbankAccession") or ""
+    return get_accession(row)
 
 
 def _release_date(row: dict) -> str:
@@ -88,7 +94,7 @@ def _release_date(row: dict) -> str:
 
 def _version_status(row: dict) -> str:
     """Return versionStatus across camelCase / snake_case, default 'current'."""
-    return row.get("versionStatus") or row.get("version_status") or "current"
+    return get_version_status(row) or "current"
 
 
 def _is_affiliated(row: dict) -> bool:
@@ -132,7 +138,7 @@ def load_assemblies(current_tsv: str, historical_tsv: str) -> list[dict]:
             print(f"  Warning: {label} TSV not found: {path}")
             continue
         count = 0
-        with open(path, encoding="utf-8") as f:
+        with open_tsv(path) as f:
             for row in csv.DictReader(f, delimiter="\t"):
                 rows.append(row)
                 count += 1
@@ -325,17 +331,26 @@ def build_output_rows(taxa: dict, species_extra: dict) -> list[dict]:
 
 
 @flow(log_prints=True)
-def compute_taxon_milestones(work_dir: str = ".", taxdump_path: str | None = None) -> None:
+def compute_taxon_milestones(
+    work_dir: str = ".",
+    taxdump_path: str | None = None,
+    yaml_path: str | None = None,
+) -> None:
     """Compute per-taxon assembly milestones and write the summary TSV.
 
+    The current-TSV filename comes from the config when yaml_path is given,
+    and is otherwise discovered in work_dir, so nothing hardcodes it.
+
     Args:
-        work_dir: Directory containing assembly_current.tsv and
-            assembly_historical.tsv; output is written there too.
+        work_dir: Directory containing the current and historical TSVs;
+            output is written there too.
         taxdump_path: Dev/test NCBI taxdump directory. In production the
             lineage arrives via the upstream contract and this is omitted.
+        yaml_path: Optional YAML config naming the current TSV.
     """
-    current_tsv = os.path.join(work_dir, CURRENT_TSV)
-    historical_tsv = os.path.join(work_dir, HISTORICAL_TSV)
+    config = load_config(config_file=yaml_path) if yaml_path else None
+    current_tsv, _, _ = resolve_current_tsv_paths(work_dir, config=config)
+    historical_tsv = resolve_historical_tsv_path(work_dir)
     output_tsv = os.path.join(work_dir, OUTPUT_TSV)
 
     separator = "=" * 80
@@ -406,7 +421,11 @@ def compute_taxon_milestones(work_dir: str = ".", taxdump_path: str | None = Non
 
 if __name__ == "__main__":
     args = _parse_args(
-        [WORK_DIR, TAXDUMP_PATH],
+        [WORK_DIR, TAXDUMP_PATH, YAML_PATH],
         description="Compute per-taxon assembly milestones from version-tracked TSVs",
     )
-    compute_taxon_milestones(work_dir=args.work_dir, taxdump_path=args.taxdump_path)
+    compute_taxon_milestones(
+        work_dir=args.work_dir,
+        taxdump_path=args.taxdump_path,
+        yaml_path=getattr(args, "yaml_path", None),
+    )

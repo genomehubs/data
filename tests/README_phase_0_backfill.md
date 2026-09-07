@@ -44,11 +44,10 @@ Test the complete backfill on the 3-assembly fixture already in the repo
 
 ```bash
 mkdir -p /tmp/assembly-versions
-cp configs/assembly_historical.types.yaml /tmp/assembly-versions/
 
 SKIP_PREFECT=true python3 -m flows.parsers.parse_backfill_historical_versions \
   --input_path tests/test_data/assembly_test_sample.jsonl \
-  --yaml_path /tmp/assembly-versions/assembly_historical.types.yaml \
+  --yaml_path configs/assembly_historical.types.yaml \
   --work_dir /tmp/assembly-versions
 ```
 
@@ -56,18 +55,17 @@ SKIP_PREFECT=true python3 -m flows.parsers.parse_backfill_historical_versions \
 
 ```powershell
 New-Item -ItemType Directory -Force -Path C:\Temp\assembly-versions
-Copy-Item configs\assembly_historical.types.yaml C:\Temp\assembly-versions\
 
 $env:SKIP_PREFECT = "true"
 python -m flows.parsers.parse_backfill_historical_versions `
   --input_path tests\test_data\assembly_test_sample.jsonl `
-  --yaml_path C:\Temp\assembly-versions\assembly_historical.types.yaml `
+  --yaml_path configs\assembly_historical.types.yaml `
   --work_dir C:\Temp\assembly-versions
 ```
 
-> **Note on output path**: the output TSV (`assembly_historical.tsv`) is written
-> relative to the *YAML file's directory*, not `--work_dir`. Copying the YAML
-> into `--work_dir` (as above) puts the output there.
+> **Note on output path**: the output TSV (`assembly_historical.tsv`) is
+> written into `--work_dir`. The YAML's own directory is not used, so the
+> config can be passed straight from `configs/`.
 
 Requires `datasets` CLI and network access (FTP version discovery +
 `datasets summary` per version). Without them each assembly reports a clean
@@ -84,3 +82,9 @@ python3 -m flows.parsers.parse_backfill_historical_versions \
 
 The run is resumable: if interrupted, re-running with the same arguments picks
 up from the last saved checkpoint in `<work_dir>/checkpoints/`.
+
+The write is non-destructive. When `assembly_historical.tsv` already exists the
+parser appends only the versions not already in it, keyed on
+`genbankAccession`, so re-running a completed backfill — or a daily gap-fill
+that re-parses versions already on file — neither truncates the output nor
+duplicates rows.

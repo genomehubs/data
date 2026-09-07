@@ -10,6 +10,7 @@ Covers:
 """
 
 import csv
+import gzip
 import json
 import os
 import sys
@@ -18,20 +19,46 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+TAB = "\t"
+NEWLINE = "\n"
+
+HISTORICAL_YAML = (
+    Path(__file__).parent.parent / "configs" / "assembly_historical.types.yaml"
+)
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 os.environ["SKIP_PREFECT"] = "true"
 
-from flows.lib.utils import Parser  # noqa: E402
+from flows.lib.utils import Parser, load_config  # noqa: E402
 from flows.parsers import parse_assembly_versions as incremental_module  # noqa: E402
+from flows.parsers import (  # noqa: E402
+    parse_backfill_historical_versions as backfill_module,
+)
 from flows.parsers.parse_assembly_versions import (  # noqa: E402
     append_superseded_to_tsv,
     build_missing_version_record,
     build_superseded_row,
     derive_assembly_version_paths,
     identify_newly_superseded,
+    load_historical_headers,
     load_previous_parsed_by_base,
+    merge_fieldnames,
     parse_assembly_versions,
+)
+from flows.lib.assembly_versions_utils import (  # noqa: E402
+    canonicalize_columns,
+    get_accession,
+    get_assembly_id,
+    get_version_status,
+    open_tsv,
+    resolve_current_tsv_paths,
+    resolve_historical_yaml_path,
+)
+from flows.parsers.parse_backfill_historical_versions import (  # noqa: E402
+    read_existing_output,
+    resolve_output_path,
+    write_or_append_parsed,
 )
 from flows.parsers.parse_ncbi_assemblies import snapshot_previous_output  # noqa: E402
 from flows.updaters import update_assembly_versions as updater_module  # noqa: E402
@@ -81,17 +108,17 @@ class TestLoadPreviousParsed:
 
     def test_single_version_indexed(self, tmp_path):
         tsv = tmp_path / "current.tsv"
-        write_tsv(tsv, [{"accession": "GCA_000222935.1", "taxon_id": "12345"}])
+        write_tsv(tsv, [{"genbankAccession": "GCA_000222935.1", "taxId": "12345"}])
         result = load_previous_parsed_by_base(str(tsv))
         assert "GCA_000222935" in result
         assert 1 in result["GCA_000222935"]
-        assert result["GCA_000222935"][1]["taxon_id"] == "12345"
+        assert result["GCA_000222935"][1]["taxId"] == "12345"
 
     def test_multi_version_same_base(self, tmp_path):
         tsv = tmp_path / "current.tsv"
         write_tsv(tsv, [
-            {"accession": "GCA_000222935.1", "taxon_id": "1"},
-            {"accession": "GCA_000222935.2", "taxon_id": "1"},
+            {"genbankAccession": "GCA_000222935.1", "taxId": "1"},
+            {"genbankAccession": "GCA_000222935.2", "taxId": "1"},
         ])
         result = load_previous_parsed_by_base(str(tsv))
         assert len(result["GCA_000222935"]) == 2
@@ -101,13 +128,41 @@ class TestLoadPreviousParsed:
     def test_multiple_base_accessions(self, tmp_path):
         tsv = tmp_path / "current.tsv"
         write_tsv(tsv, [
-            {"accession": "GCA_000222935.1", "taxon_id": "1"},
-            {"accession": "GCA_000412225.1", "taxon_id": "2"},
+            {"genbankAccession": "GCA_000222935.1", "taxId": "1"},
+            {"genbankAccession": "GCA_000412225.1", "taxId": "2"},
         ])
         result = load_previous_parsed_by_base(str(tsv))
         assert len(result) == 2
         assert "GCA_000222935" in result
         assert "GCA_000412225" in result
+
+    def test_legacy_accession_column_still_read(self, tmp_path):
+        """Rows written before the schema fix used a bare 'accession' column."""
+        tsv = tmp_path / "current.tsv"
+        write_tsv(tsv, [{"accession": "GCA_000222935.1", "taxId": "1"}])
+        result = load_previous_parsed_by_base(str(tsv))
+        assert 1 in result["GCA_000222935"]
+
+    def test_rows_without_accession_skipped(self, tmp_path):
+        tsv = tmp_path / "current.tsv"
+        write_tsv(tsv, [
+            {"genbankAccession": "", "taxId": "1"},
+            {"genbankAccession": "GCA_000222935.1", "taxId": "2"},
+        ])
+        result = load_previous_parsed_by_base(str(tsv))
+        assert list(result) == ["GCA_000222935"]
+
+    def test_gzipped_previous_snapshot_read(self, tmp_path):
+        """A gzipped current TSV yields a gzipped .previous snapshot."""
+        tsv = tmp_path / "ncbi_datasets_eukaryota.tsv.gz.previous"
+        with gzip.open(tsv, "wt", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(
+                f, fieldnames=["genbankAccession", "taxId"], delimiter=TAB
+            )
+            writer.writeheader()
+            writer.writerow({"genbankAccession": "GCA_000222935.1", "taxId": "1"})
+        result = load_previous_parsed_by_base(str(tsv))
+        assert 1 in result["GCA_000222935"]
 
 
 # ---------------------------------------------------------------------------
@@ -119,18 +174,18 @@ class TestBuildSupersededRow:
 
     def _base_row(self):
         return {
-            "accession": "GCA_000222935.1",
-            "taxon_id": "12345",
-            "assembly_level": "Chromosome",
+            "genbankAccession": "GCA_000222935.1",
+            "taxId": "12345",
+            "assemblyLevel": "Chromosome",
         }
 
     def test_version_status_set(self):
         row = build_superseded_row(self._base_row(), 1, "GCA_000222935.2", 2, "2024-01-15")
-        assert row["version_status"] == "superseded"
+        assert row["versionStatus"] == "superseded"
 
     def test_assembly_id_format(self):
         row = build_superseded_row(self._base_row(), 1, "GCA_000222935.2", 2, "2024-01-15")
-        assert row["assembly_id"] == "GCA_000222935_1"
+        assert row["assemblyID"] == "GCA_000222935_1"
 
     def test_superseded_by_fields(self):
         row = build_superseded_row(self._base_row(), 1, "GCA_000222935.2", 2, "2024-01-15")
@@ -141,12 +196,12 @@ class TestBuildSupersededRow:
     def test_original_row_not_mutated(self):
         original = self._base_row()
         build_superseded_row(original, 1, "GCA_000222935.2", 2, "2024-01-15")
-        assert "version_status" not in original
+        assert "versionStatus" not in original
 
     def test_existing_fields_preserved(self):
         row = build_superseded_row(self._base_row(), 1, "GCA_000222935.2", 2, "2024-01-15")
-        assert row["taxon_id"] == "12345"
-        assert row["assembly_level"] == "Chromosome"
+        assert row["taxId"] == "12345"
+        assert row["assemblyLevel"] == "Chromosome"
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +252,9 @@ class TestIdentifyNewlySuperseded:
             tmp_path, [{"accession": "GCA_000222935.2", "releaseDate": "2024-01-15"}]
         )
         previous = {
-            "GCA_000222935": {1: {"accession": "GCA_000222935.1", "taxon_id": "1"}}
+            "GCA_000222935": {
+                1: {"genbankAccession": "GCA_000222935.1", "taxId": "1"}
+            }
         }
         superseded, missing = identify_newly_superseded(jsonl, previous)
         assert len(superseded) == 1
@@ -207,7 +264,9 @@ class TestIdentifyNewlySuperseded:
     def test_missing_with_version_gap(self, tmp_path):
         jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_000222935.3"}])
         previous = {
-            "GCA_000222935": {1: {"accession": "GCA_000222935.1", "taxon_id": "1"}}
+            "GCA_000222935": {
+                1: {"genbankAccession": "GCA_000222935.1", "taxId": "1"}
+            }
         }
         superseded, missing = identify_newly_superseded(jsonl, previous)
         assert superseded == []
@@ -228,7 +287,9 @@ class TestIdentifyNewlySuperseded:
             {"accession": "GCA_999999999.2"},
         ])
         previous = {
-            "GCA_000222935": {1: {"accession": "GCA_000222935.1", "taxon_id": "1"}}
+            "GCA_000222935": {
+                1: {"genbankAccession": "GCA_000222935.1", "taxId": "1"}
+            }
         }
         superseded, missing = identify_newly_superseded(jsonl, previous)
         assert len(superseded) == 1
@@ -244,9 +305,9 @@ class TestAppendSupersededToTsv:
 
     def _make_row(self, acc, assembly_id, status="superseded"):
         return {
-            "accession": acc,
-            "assembly_id": assembly_id,
-            "version_status": status,
+            "genbankAccession": acc,
+            "assemblyID": assembly_id,
+            "versionStatus": status,
         }
 
     def test_creates_new_file(self, tmp_path):
@@ -256,7 +317,7 @@ class TestAppendSupersededToTsv:
         assert tsv.exists()
         result = read_tsv(tsv)
         assert len(result) == 1
-        assert result[0]["accession"] == "GCA_000222935.1"
+        assert result[0]["genbankAccession"] == "GCA_000222935.1"
 
     def test_appends_to_existing(self, tmp_path):
         tsv = tmp_path / "historical.tsv"
@@ -270,9 +331,9 @@ class TestAppendSupersededToTsv:
     def test_dedup_on_assembly_id_keeps_new(self, tmp_path):
         tsv = tmp_path / "historical.tsv"
         old_row = {
-            "accession": "GCA_000222935.1",
-            "assembly_id": "GCA_000222935_1",
-            "version_status": "superseded",
+            "genbankAccession": "GCA_000222935.1",
+            "assemblyID": "GCA_000222935_1",
+            "versionStatus": "superseded",
             "superseded_by": "GCA_000222935.2",
         }
         write_tsv(tsv, [old_row])
@@ -311,7 +372,7 @@ class TestIncrementalOrchestrator:
     def test_one_superseded_produces_correct_counts(self, tmp_path):
         previous_tsv = tmp_path / "previous.tsv"
         write_tsv(previous_tsv, [
-            {"accession": "GCA_000222935.1", "taxon_id": "1"}
+            {"genbankAccession": "GCA_000222935.1", "taxId": "1"}
         ])
         jsonl = tmp_path / "new.jsonl"
         write_jsonl(jsonl, [
@@ -329,7 +390,7 @@ class TestIncrementalOrchestrator:
         """v3 present, v2 missing → missing_versions_count == 1."""
         previous_tsv = tmp_path / "previous.tsv"
         write_tsv(previous_tsv, [
-            {"accession": "GCA_000222935.1", "taxon_id": "1"}
+            {"genbankAccession": "GCA_000222935.1", "taxId": "1"}
         ])
         jsonl = tmp_path / "new.jsonl"
         write_jsonl(jsonl, [
@@ -347,7 +408,7 @@ class TestIncrementalOrchestrator:
     def test_historical_tsv_written(self, tmp_path):
         previous_tsv = tmp_path / "previous.tsv"
         write_tsv(previous_tsv, [
-            {"accession": "GCA_000222935.1", "taxon_id": "1"}
+            {"genbankAccession": "GCA_000222935.1", "taxId": "1"}
         ])
         jsonl = tmp_path / "new.jsonl"
         write_jsonl(jsonl, [
@@ -362,7 +423,7 @@ class TestIncrementalOrchestrator:
         assert historical_tsv.exists()
         rows = read_tsv(historical_tsv)
         assert len(rows) == 1
-        assert rows[0]["version_status"] == "superseded"
+        assert rows[0]["versionStatus"] == "superseded"
 
 
 # ---------------------------------------------------------------------------
@@ -563,3 +624,514 @@ class TestSnapshotPreviousOutput:
         snapshot_previous_output(self._config(output))
 
         assert previous.read_bytes() == output.read_bytes()
+
+
+# ---------------------------------------------------------------------------
+# TestNormalisingAccessors
+# ---------------------------------------------------------------------------
+
+class TestNormalisingAccessors:
+    """get_* accessors read either naming convention (PR-A item 1)."""
+
+    def test_accession_prefers_canonical_column(self):
+        row = {"genbankAccession": "GCA_000222935.1", "accession": "GCA_000412225.1"}
+        assert get_accession(row) == "GCA_000222935.1"
+
+    def test_accession_falls_back_to_legacy_column(self):
+        assert get_accession({"accession": "GCA_000412225.1"}) == "GCA_000412225.1"
+
+    def test_accession_absent_returns_empty(self):
+        assert get_accession({"taxId": "1"}) == ""
+
+    def test_assembly_id_all_three_spellings(self):
+        assert get_assembly_id({"assemblyID": "GCA_1_1"}) == "GCA_1_1"
+        assert get_assembly_id({"assemblyId": "GCA_1_1"}) == "GCA_1_1"
+        assert get_assembly_id({"assembly_id": "GCA_1_1"}) == "GCA_1_1"
+
+    def test_assembly_id_prefers_the_yaml_spelling(self):
+        """assemblyID is what the historical YAML declares, so it wins."""
+        row = {"assemblyID": "canonical", "assemblyId": "upstream"}
+        assert get_assembly_id(row) == "canonical"
+
+    def test_version_status_both_conventions(self):
+        assert get_version_status({"versionStatus": "superseded"}) == "superseded"
+        assert get_version_status({"version_status": "superseded"}) == "superseded"
+
+    def test_empty_value_falls_through_to_the_next_alias(self):
+        row = {"genbankAccession": "", "accession": "GCA_000412225.1"}
+        assert get_accession(row) == "GCA_000412225.1"
+
+
+# ---------------------------------------------------------------------------
+# TestResolveCurrentTsvPaths
+# ---------------------------------------------------------------------------
+
+class TestResolveCurrentTsvPaths:
+    """The current-TSV name comes from the config, not a hardcoded constant (F4)."""
+
+    def test_name_and_snapshot_from_config(self, tmp_path):
+        config = MagicMock()
+        config.meta = {"file_name": "configs/ncbi_datasets_eukaryota.tsv.gz"}
+        current, previous, open_fn = resolve_current_tsv_paths(
+            str(tmp_path), config=config
+        )
+        assert current.endswith("ncbi_datasets_eukaryota.tsv.gz")
+        assert previous == f"{current}.previous"
+        assert open_fn is open_tsv
+
+    def test_discovery_ignores_derived_outputs(self, tmp_path):
+        (tmp_path / "assembly_historical.tsv").touch()
+        (tmp_path / "assembly_version_summary.tsv").touch()
+        (tmp_path / "ncbi_datasets_eukaryota.tsv.gz").touch()
+        current, _, _ = resolve_current_tsv_paths(str(tmp_path))
+        assert current.endswith("ncbi_datasets_eukaryota.tsv.gz")
+
+    def test_fallback_name_when_nothing_on_disk(self, tmp_path):
+        current, previous, _ = resolve_current_tsv_paths(str(tmp_path))
+        assert current.endswith("assembly_current.tsv")
+        assert previous.endswith("assembly_current.tsv.previous")
+
+    def test_ambiguous_directory_raises(self, tmp_path):
+        (tmp_path / "one.tsv").touch()
+        (tmp_path / "two.tsv").touch()
+        with pytest.raises(ValueError):
+            resolve_current_tsv_paths(str(tmp_path))
+
+    def test_derived_paths_use_the_config_name(self, tmp_path):
+        config = MagicMock()
+        config.meta = {"file_name": "configs/ncbi_datasets_eukaryota.tsv.gz"}
+        jsonl = tmp_path / "assembly_data_report.jsonl"
+        jsonl.touch()
+        previous_tsv, historical_tsv = derive_assembly_version_paths(
+            str(jsonl), config=config
+        )
+        assert previous_tsv.endswith("ncbi_datasets_eukaryota.tsv.gz.previous")
+        assert historical_tsv.endswith("assembly_historical.tsv")
+
+
+# ---------------------------------------------------------------------------
+# TestMergeFieldnames
+# ---------------------------------------------------------------------------
+
+class TestMergeFieldnames:
+    """merge_fieldnames covers every column present in any row (F3)."""
+
+    def test_union_across_rows(self):
+        assert set(merge_fieldnames([{"a": 1}, {"b": 2}])) == {"a", "b"}
+
+    def test_preferred_order_honoured(self):
+        rows = [{"b": 1, "a": 2, "z": 3}]
+        assert merge_fieldnames(rows, ["a", "b"]) == ["a", "b", "z"]
+
+    def test_preferred_columns_absent_from_rows_are_dropped(self):
+        assert merge_fieldnames([{"a": 1}], ["a", "b"]) == ["a"]
+
+    def test_no_rows_gives_no_columns(self):
+        assert merge_fieldnames([], ["a"]) == []
+
+
+# ---------------------------------------------------------------------------
+# TestAppendPreservesColumns
+# ---------------------------------------------------------------------------
+
+class TestAppendPreservesColumns:
+    """Merging Phase 0 and Phase 1 row sets must not drop columns (F3)."""
+
+    def test_no_column_lost_when_merging_row_sets(self, tmp_path):
+        tsv = tmp_path / "historical.tsv"
+        write_tsv(tsv, [{
+            "genbankAccession": "GCA_000412225.1",
+            "assemblyID": "GCA_000412225_1",
+            "versionStatus": "superseded",
+        }])
+        new_row = {
+            "genbankAccession": "GCA_000222935.1",
+            "assemblyID": "GCA_000222935_1",
+            "versionStatus": "superseded",
+            "superseded_by": "GCA_000222935.2",
+            "superseded_by_version": 2,
+            "superseded_date": "2024-01-15",
+        }
+        append_superseded_to_tsv([new_row], str(tsv))
+        result = read_tsv(tsv)
+        assert len(result) == 2
+        by_accession = {r["genbankAccession"]: r for r in result}
+        assert by_accession["GCA_000222935.1"]["superseded_by"] == "GCA_000222935.2"
+        assert "superseded_date" in by_accession["GCA_000412225.1"]
+
+    def test_explicit_headers_set_the_column_order(self, tmp_path):
+        tsv = tmp_path / "historical.tsv"
+        row = {
+            "versionStatus": "superseded",
+            "genbankAccession": "GCA_000222935.1",
+            "assemblyID": "GCA_000222935_1",
+        }
+        headers = ["genbankAccession", "assemblyID", "versionStatus"]
+        append_superseded_to_tsv([row], str(tsv), headers=headers)
+        with open(tsv, encoding="utf-8") as f:
+            written = next(csv.reader(f, delimiter=TAB))
+        assert written == headers
+
+
+# ---------------------------------------------------------------------------
+# TestSchemaConformance
+# ---------------------------------------------------------------------------
+
+class TestSchemaConformance:
+    """Phase 1 output columns must be declared in assembly_historical.types.yaml.
+
+    This is the check that would have caught F1-F3: Phase 1 was written and
+    tested against a mock schema that production never produces.
+    """
+
+    @staticmethod
+    def _yaml_headers():
+        return load_config(config_file=str(HISTORICAL_YAML)).headers
+
+    def test_canonical_columns_declared(self):
+        headers = self._yaml_headers()
+        assert "genbankAccession" in headers
+        assert "assemblyID" in headers
+        assert "versionStatus" in headers
+
+    def test_supersession_columns_declared(self):
+        headers = self._yaml_headers()
+        for column in ("superseded_by", "superseded_by_version", "superseded_date"):
+            assert column in headers
+
+    def test_superseded_row_columns_are_all_declared(self):
+        headers = set(self._yaml_headers())
+        previous_row = dict.fromkeys(headers, "")
+        previous_row["genbankAccession"] = "GCA_000222935.1"
+        row = build_superseded_row(previous_row, 1, "GCA_000222935.2", 2, "2024-01-15")
+        assert set(row) <= headers
+
+    def test_snake_case_columns_not_emitted(self):
+        row = build_superseded_row(
+            {"genbankAccession": "GCA_000222935.1"},
+            1, "GCA_000222935.2", 2, "2024-01-15",
+        )
+        assert "version_status" not in row
+        assert "assembly_id" not in row
+
+    def test_write_side_uses_the_yaml_spelling_of_assembly_id(self):
+        """Reads tolerate assemblyId; writes must stay on the declared name.
+
+        parse_ncbi_assemblies writes `assemblyId` upstream, but the historical
+        YAML declares `assemblyID`, so a row emitted with the lowercase form
+        would be dropped by the GenomeHubs write path.
+        """
+        row = build_superseded_row(
+            {"genbankAccession": "GCA_000222935.1", "assemblyId": "stale"},
+            1, "GCA_000222935.2", 2, "2024-01-15",
+        )
+        assert row["assemblyID"] == "GCA_000222935_1"
+        assert "assemblyID" in self._yaml_headers()
+        assert "assemblyId" not in self._yaml_headers()
+
+    def test_written_header_is_a_subset_of_the_yaml_schema(self, tmp_path):
+        headers = self._yaml_headers()
+        previous_row = dict.fromkeys(headers, "")
+        previous_row["genbankAccession"] = "GCA_000222935.1"
+        row = build_superseded_row(previous_row, 1, "GCA_000222935.2", 2, "2024-01-15")
+        tsv = tmp_path / "historical.tsv"
+        append_superseded_to_tsv([row], str(tsv), headers=headers)
+        with open(tsv, encoding="utf-8") as f:
+            written = next(csv.reader(f, delimiter=TAB))
+        assert set(written) <= set(headers)
+        assert written == list(headers)
+
+
+# ---------------------------------------------------------------------------
+# TestCurrentSchemaDoesNotLeakIntoHistorical
+# ---------------------------------------------------------------------------
+
+class TestCurrentSchemaDoesNotLeakIntoHistorical:
+    """A Phase 1 row is copied from the current TSV, whose schema is not ours.
+
+    Left unbounded, every current-only column — upstream's `assemblyId` spelling
+    among them — lands in assembly_historical.tsv despite the YAML never
+    declaring it.
+    """
+
+    @staticmethod
+    def _yaml_headers():
+        return list(load_config(config_file=str(HISTORICAL_YAML)).headers)
+
+    @staticmethod
+    def _current_row():
+        """A row as the current TSV spells it, extra columns and all."""
+        return {
+            "genbankAccession": "GCA_000222935.1",
+            "assemblyId": "GCA_000222935_1",
+            "versionStatus": "current",
+            "releaseDate": "2011-06-01",
+            "sourceDatabase": "SOURCE_DATABASE_GENBANK",
+        }
+
+    def test_canonicalize_columns_drops_the_alias_spelling(self):
+        row = canonicalize_columns(
+            {"assemblyId": "GCA_000222935_1", "version_status": "current"}
+        )
+        assert row == {
+            "assemblyID": "GCA_000222935_1", "versionStatus": "current",
+        }
+
+    def test_canonicalize_columns_prefers_the_canonical_value(self):
+        row = canonicalize_columns(
+            {"assemblyID": "canonical", "assemblyId": "stale"}
+        )
+        assert row["assemblyID"] == "canonical"
+        assert "assemblyId" not in row
+
+    def test_canonicalize_columns_invents_nothing(self):
+        assert canonicalize_columns({"releaseDate": "2011-06-01"}) == {
+            "releaseDate": "2011-06-01"
+        }
+
+    def test_superseded_row_carries_one_assembly_id_column(self):
+        row = build_superseded_row(
+            self._current_row(), 1, "GCA_000222935.2", 2, "2024-01-15"
+        )
+        assert row["assemblyID"] == "GCA_000222935_1"
+        assert "assemblyId" not in row
+
+    def test_undeclared_columns_are_not_written(self, tmp_path):
+        tsv = tmp_path / "historical.tsv"
+        row = build_superseded_row(
+            self._current_row(), 1, "GCA_000222935.2", 2, "2024-01-15"
+        )
+        append_superseded_to_tsv([row], str(tsv), headers=self._yaml_headers())
+        with open(tsv, encoding="utf-8") as f:
+            written = next(csv.reader(f, delimiter=TAB))
+        assert set(written) <= set(self._yaml_headers())
+        assert "sourceDatabase" not in written
+        assert read_tsv(tsv)[0]["assemblyID"] == "GCA_000222935_1"
+
+    def test_columns_already_on_disk_are_kept(self, tmp_path):
+        # The schema bounds what a new row may add; it must not evict a column
+        # an earlier run already put in the file (F3).
+        tsv = tmp_path / "historical.tsv"
+        write_tsv(tsv, [{
+            "genbankAccession": "GCA_000412225.1",
+            "assemblyID": "GCA_000412225_1",
+            "legacyColumn": "keep me",
+        }])
+        row = build_superseded_row(
+            self._current_row(), 1, "GCA_000222935.2", 2, "2024-01-15"
+        )
+        append_superseded_to_tsv([row], str(tsv), headers=self._yaml_headers())
+        result = read_tsv(tsv)
+        by_accession = {r["genbankAccession"]: r for r in result}
+        assert by_accession["GCA_000412225.1"]["legacyColumn"] == "keep me"
+        assert "sourceDatabase" not in by_accession["GCA_000222935.1"]
+
+    def test_without_headers_the_union_is_still_taken(self, tmp_path):
+        # No schema resolved means no bound — the pre-existing behaviour.
+        tsv = tmp_path / "historical.tsv"
+        row = build_superseded_row(
+            self._current_row(), 1, "GCA_000222935.2", 2, "2024-01-15"
+        )
+        append_superseded_to_tsv([row], str(tsv))
+        with open(tsv, encoding="utf-8") as f:
+            written = next(csv.reader(f, delimiter=TAB))
+        assert "sourceDatabase" in written
+
+    def test_merge_fieldnames_honours_allowed(self):
+        assert merge_fieldnames(
+            [{"a": 1, "b": 2}], ["a", "b"], allowed={"a"}
+        ) == ["a"]
+
+
+# ---------------------------------------------------------------------------
+# TestHistoricalHeadersAreResolved
+# ---------------------------------------------------------------------------
+
+class TestHistoricalHeadersAreResolved:
+    """The entry points must actually supply the schema, or it bounds nothing."""
+
+    def test_repo_config_is_found_from_an_unrelated_work_dir(self, tmp_path):
+        assert resolve_historical_yaml_path(str(tmp_path)) == str(HISTORICAL_YAML)
+
+    def test_a_copy_in_work_dir_wins(self, tmp_path):
+        local = tmp_path / "assembly_historical.types.yaml"
+        local.write_text(HISTORICAL_YAML.read_text(encoding="utf-8"), encoding="utf-8")
+        assert resolve_historical_yaml_path(str(tmp_path)) == str(local)
+
+    def test_headers_load_from_the_repo_config(self, tmp_path):
+        headers = load_historical_headers(str(tmp_path))
+        assert headers == list(load_config(config_file=str(HISTORICAL_YAML)).headers)
+
+    def test_an_unloadable_yaml_degrades_to_none(self, tmp_path):
+        broken = tmp_path / "assembly_historical.types.yaml"
+        broken.write_text("this: [is not: valid", encoding="utf-8")
+        assert load_historical_headers(str(tmp_path)) is None
+
+    def test_a_missing_config_degrades_to_none(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            incremental_module, "resolve_historical_yaml_path", lambda _: None
+        )
+        assert load_historical_headers(str(tmp_path)) is None
+
+    def test_the_wrapper_passes_the_headers_through(self, tmp_path, monkeypatch):
+        (tmp_path / "report.jsonl").write_text("", encoding="utf-8")
+        captured = {}
+
+        def fake_parse(**kwargs):
+            captured.update(kwargs)
+            return {"missing_versions_count": 0, "missing_versions": []}
+
+        monkeypatch.setattr(
+            incremental_module, "parse_assembly_versions", fake_parse
+        )
+        incremental_module.parse_assembly_versions_wrapper(
+            working_yaml="", work_dir=str(tmp_path), append=False
+        )
+        assert captured["historical_headers"] == list(
+            load_config(config_file=str(HISTORICAL_YAML)).headers
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestResolveOutputPath
+# ---------------------------------------------------------------------------
+
+class TestResolveOutputPath:
+    """Phase 0 writes into work_dir, not the YAML file directory (F6)."""
+
+    def test_output_lands_in_work_dir(self, tmp_path):
+        config = load_config(config_file=str(HISTORICAL_YAML))
+        path = resolve_output_path(config, str(tmp_path))
+        assert os.path.dirname(path) == str(tmp_path)
+        assert os.path.basename(path) == "assembly_historical.tsv"
+
+    def test_config_meta_updated_in_place(self, tmp_path):
+        config = load_config(config_file=str(HISTORICAL_YAML))
+        path = resolve_output_path(config, str(tmp_path))
+        assert config.meta["file_name"] == path
+
+
+# ---------------------------------------------------------------------------
+# TestNonDestructiveHistoricalWrite
+# ---------------------------------------------------------------------------
+
+class TestNonDestructiveHistoricalWrite:
+    """Phase 0 must not truncate an existing historical TSV (F9).
+
+    The F5 decision makes the gap-fill path re-invoke this parser daily, so a
+    truncating write would wipe the backfill it is meant to extend.
+    """
+
+    @staticmethod
+    def _config(tmp_path):
+        config = load_config(config_file=str(HISTORICAL_YAML))
+        resolve_output_path(config, str(tmp_path))
+        return config
+
+    @staticmethod
+    def _row(accession):
+        base, version = accession.split(".")
+        return {
+            "genbankAccession": accession,
+            "assemblyID": f"{base}_{version}",
+            "versionStatus": "superseded",
+        }
+
+    def test_first_write_creates_the_file_with_a_header(self, tmp_path):
+        config = self._config(tmp_path)
+        written = write_or_append_parsed(
+            {"GCA_000412225.1": self._row("GCA_000412225.1")}, config
+        )
+        output = tmp_path / "assembly_historical.tsv"
+        assert written == 1
+        with open(output, encoding="utf-8") as f:
+            header = next(csv.reader(f, delimiter=TAB))
+        assert header == list(config.headers)
+
+    def test_existing_rows_survive_a_gap_fill(self, tmp_path):
+        config = self._config(tmp_path)
+        output = tmp_path / "assembly_historical.tsv"
+        write_or_append_parsed({
+            "GCA_000412225.1": self._row("GCA_000412225.1"),
+            "GCA_000412225.2": self._row("GCA_000412225.2"),
+        }, config)
+        assert len(read_tsv(output)) == 2
+
+        written = write_or_append_parsed(
+            {"GCA_000222935.1": self._row("GCA_000222935.1")}, config
+        )
+        rows = read_tsv(output)
+        assert written == 1
+        assert len(rows) == 3
+        assert {r["genbankAccession"] for r in rows} == {
+            "GCA_000412225.1", "GCA_000412225.2", "GCA_000222935.1",
+        }
+
+    def test_reparsed_versions_are_not_duplicated(self, tmp_path):
+        config = self._config(tmp_path)
+        parsed = {"GCA_000412225.1": self._row("GCA_000412225.1")}
+        write_or_append_parsed(parsed, config)
+        written = write_or_append_parsed(parsed, config)
+        assert written == 0
+        assert len(read_tsv(tmp_path / "assembly_historical.tsv")) == 1
+
+    def test_read_existing_output_reads_the_header_and_accessions(self, tmp_path):
+        output = tmp_path / "assembly_historical.tsv"
+        write_tsv(output, [self._row("GCA_000412225.1"), self._row("GCA_000412225.2")])
+        header, accessions = read_existing_output(str(output))
+        assert accessions == {"GCA_000412225.1", "GCA_000412225.2"}
+        assert header[0] == "genbankAccession"
+
+    def test_read_existing_output_on_an_absent_file(self, tmp_path):
+        assert read_existing_output(str(tmp_path / "nope.tsv")) == ([], set())
+
+    def test_rows_without_an_accession_are_not_overwritten(self, tmp_path):
+        # read_existing_output only collects non-empty accessions, so a file
+        # whose rows all lack one yields an empty accession set.  The rewrite
+        # branch must key off the header instead, or those rows are lost.
+        config = self._config(tmp_path)
+        output = tmp_path / "assembly_historical.tsv"
+        write_tsv(output, [{
+            "genbankAccession": "",
+            "assemblyID": "GCA_000412225_1",
+            "versionStatus": "superseded",
+        }])
+
+        written = write_or_append_parsed(
+            {"GCA_000222935.1": self._row("GCA_000222935.1")}, config
+        )
+        rows = read_tsv(output)
+        assert written == 1
+        assert len(rows) == 2
+        assert rows[0]["assemblyID"] == "GCA_000412225_1"
+        assert rows[1]["genbankAccession"] == "GCA_000222935.1"
+
+    def test_appends_under_a_header_phase_1_has_widened(self, tmp_path):
+        # Phase 1 rewrites this file with the union of every row column, so a
+        # gap fill must append under what is on disk, not the config header.
+        config = self._config(tmp_path)
+        output = tmp_path / "assembly_historical.tsv"
+        write_or_append_parsed({"GCA_000412225.1": self._row("GCA_000412225.1")}, config)
+
+        rows = read_tsv(output)
+        widened = list(rows[0].keys()) + ["genusTaxId"]
+        rows[0]["genusTaxId"] = "8001"
+        with open(output, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=widened, delimiter=TAB)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        write_or_append_parsed({"GCA_000222935.1": self._row("GCA_000222935.1")}, config)
+
+        with open(output, encoding="utf-8") as f:
+            lines = [line.rstrip(NEWLINE).split(TAB)
+                     for line in f if line.strip()]
+        # Every row spans the full widened header, so no column can slide.
+        assert {len(line) for line in lines} == {len(widened)}
+        appended = read_tsv(output)[-1]
+        assert appended["genbankAccession"] == "GCA_000222935.1"
+        assert appended["genusTaxId"] == ""
+
+    def test_flow_routes_its_write_through_the_helper(self):
+        source = Path(backfill_module.__file__).read_text(encoding="utf-8")
+        assert "written = write_or_append_parsed(parsed, config)" in source

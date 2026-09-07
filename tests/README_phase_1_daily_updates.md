@@ -50,10 +50,14 @@ missing_versions.json  ──► update_assembly_versions  ──► missing_ass
 ```
 
 **`parse_assembly_versions.py`** (daily, no network):
-- Reads the previous `assembly_current.tsv` (renamed `.previous` before each run)
+- Reads the previous current TSV (snapshotted to `.previous` before each run);
+  its filename and compression come from `config.meta["file_name"]`
 - Reads today's JSONL; for every assembly at version > 1 checks whether its
   predecessor exists in the previous TSV
-- If found: copies the row and marks it `superseded`, appends to `assembly_historical.tsv`
+- If found: copies the row, stamps `versionStatus`, `assemblyID`,
+  `superseded_by`, `superseded_by_version` and `superseded_date` — the column
+  names declared in `assembly_historical.types.yaml` — and merges it into
+  `assembly_historical.tsv`
 - If missing: writes a record to `missing_versions.json` for the updater to handle
 
 **`update_assembly_versions.py`** (runs when `missing_versions.json` exists):
@@ -69,21 +73,20 @@ both the "predecessor found" and "predecessor missing" code paths.
 
 ```bash
 mkdir -p /tmp/assembly-versions
-cp configs/assembly_historical.types.yaml /tmp/assembly-versions/
 cp tests/test_data/assembly_test_sample.jsonl /tmp/assembly-versions/assembly_data_report.jsonl
 ```
 
-> **Note on output path**: `parse_backfill_historical_versions.py` writes
-> `assembly_historical.tsv` relative to the *YAML file's directory*, not
-> `--work_dir`. Copying the YAML into `--work_dir` (as above) puts the output
-> there.
+> **Note on output path**: `parse_backfill_historical_versions.py` resolves
+> `assembly_historical.tsv` against `--work_dir`, so the YAML can stay where it
+> is in the repo. (Before PR-A the output landed next to the YAML instead, and
+> this walkthrough copied the config into `--work_dir` to work around it.)
 
 ### Step 1 — one-time Phase 0 backfill (if not already done)
 
 ```bash
 SKIP_PREFECT=true python3 -m flows.parsers.parse_backfill_historical_versions \
   --input_path /tmp/assembly-versions/assembly_data_report.jsonl \
-  --yaml_path /tmp/assembly-versions/assembly_historical.types.yaml \
+  --yaml_path configs/assembly_historical.types.yaml \
   --work_dir /tmp/assembly-versions
 # Writes: /tmp/assembly-versions/assembly_historical.tsv
 ```
@@ -95,13 +98,19 @@ run completes with 0 records written.
 ### Step 2 — simulate "yesterday's" parse
 
 ```bash
-# Minimal previous TSV: only GCA_000222935.1 was known yesterday
-printf "accession\tassembly_id\nGCA_000222935.1\tGCA_000222935_1\n" \
+# Minimal previous TSV: only GCA_000222935.1 was known yesterday.
+# Column names must match what the assembly parsers actually emit.
+printf "genbankAccession\tassemblyID\nGCA_000222935.1\tGCA_000222935_1\n" \
   > /tmp/assembly-versions/assembly_current.tsv.previous
 ```
 
-In production this file is the `assembly_current.tsv` from the previous daily
-run, renamed before the new run writes a fresh copy.
+In production this file is a verbatim snapshot of the previous run's current
+TSV, taken by `snapshot_previous_output` before the new run overwrites it. Its
+name — and whether it is gzipped — follow `config.meta["file_name"]`, so with
+the production NCBI config it is `ncbi_datasets_eukaryota.tsv.gz.previous`.
+`parse_assembly_versions` resolves both from the config it is given and opens a
+compressed snapshot transparently; the plain `assembly_current.tsv.previous`
+above is what a config emitting `assembly_current.tsv` produces.
 
 ### Step 3 — run the daily incremental parser
 
@@ -151,10 +160,15 @@ SKIP_PREFECT=true python3 -m flows.updaters.update_assembly_versions \
 ```bash
 SKIP_PREFECT=true python3 -m flows.parsers.parse_backfill_historical_versions \
   --input_path /tmp/assembly-versions/missing_assembly_versions.jsonl \
-  --yaml_path /tmp/assembly-versions/assembly_historical.types.yaml \
+  --yaml_path configs/assembly_historical.types.yaml \
   --work_dir /tmp/assembly-versions
 # Appends the missing predecessors to assembly_historical.tsv
 ```
+
+The append is genuine: when `assembly_historical.tsv` already exists the parser
+adds only the versions it does not already hold, leaving every earlier row in
+place. (Before PR-A this step rewrote the file wholesale, so a single gap-fill
+would have discarded the whole backfill.)
 
 ## Running the test suite
 
@@ -163,6 +177,8 @@ cd "$(git rev-parse --show-toplevel)"
 SKIP_PREFECT=true python3 -m pytest tests/test_assembly_versions.py -v
 ```
 
-All 34 tests cover: accession parsing, path derivation, superseded-row
-building, missing-version detection, TSV append/deduplication, updater JSONL
-writing, and the `plugin()` registration hook.
+The tests cover: accession parsing, config-driven path resolution,
+superseded-row building, missing-version detection, TSV merge/deduplication,
+schema conformance against `assembly_historical.types.yaml`, the
+non-destructive Phase 0 write, updater JSONL writing, and the `plugin()`
+registration hook.

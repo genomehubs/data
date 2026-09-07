@@ -1,0 +1,25 @@
+name: pytest
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    name: pytest
+    steps:
+      - name: Check out source repository
+        uses: actions/checkout@v4
+      - name: Set up Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The suite needs no network and no datasets CLI, so pip is enough:
+      # genomehubs pulls in the rest of what flows/lib imports.
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip "genomehubs>=2.10.14" requests pytest
+      - name: Run tests
+        env:
+          SKIP_PREFECT: "true"
+        run: python -m pytest tests/ -q
