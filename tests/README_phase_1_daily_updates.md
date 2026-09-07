@@ -9,6 +9,10 @@ have run at least once before Phase 1's daily flow can detect superseded
 versions — Phase 1 reads yesterday's `assembly_current.tsv` to look up the
 previous state and compares it against today's NCBI JSONL.
 
+Phase 1 also reads `assembly_historical.tsv` as an index of versions already
+parsed, so a gap Phase 0 has filled is not re-reported on the next run. Both
+reads are local; the step makes no network calls.
+
 ## Files added in Phase 1
 
 | File | Purpose |
@@ -52,13 +56,28 @@ missing_versions.json  ──► update_assembly_versions  ──► missing_ass
 **`parse_assembly_versions.py`** (daily, no network):
 - Reads the previous current TSV (snapshotted to `.previous` before each run);
   its filename and compression come from `config.meta["file_name"]`
-- Reads today's JSONL; for every assembly at version > 1 checks whether its
-  predecessor exists in the previous TSV
-- If found: copies the row, stamps `versionStatus`, `assemblyID`,
-  `superseded_by`, `superseded_by_version` and `superseded_date` — the column
-  names declared in `assembly_historical.types.yaml` — and merges it into
-  `assembly_historical.tsv`
-- If missing: writes a record to `missing_versions.json` for the updater to handle
+- Indexes the versions already in `assembly_historical.tsv`
+- Reads today's JSONL and, for each base accession, compares the version
+  current now with the version that was current at the last run:
+
+  | Case | Action |
+  |---|---|
+  | same version | nothing — the assembly did not change |
+  | higher version | the previous version is marked superseded; any versions between the two are gap candidates |
+  | lower version | logged as a regression (suppressed or rolled back at NCBI); nothing is written |
+  | base not seen before | every version below the current one is a gap candidate |
+
+- A superseded row copies the previous row and stamps `versionStatus`,
+  `assemblyID`, `superseded_by`, `superseded_by_version` and `superseded_date`
+  — the column names declared in `assembly_historical.types.yaml` — then merges
+  into `assembly_historical.tsv`
+- Gap candidates already present in `assembly_historical.tsv` are dropped; the
+  rest go to `missing_versions.json`, one record per missing version
+
+Because unchanged assemblies are skipped and filled gaps are filtered out, a
+normal day after a complete backfill reports close to zero missing versions.
+The two cases that legitimately remain are a base entering the dataset above
+version 1, and a multi-version jump between runs.
 
 **`update_assembly_versions.py`** (runs when `missing_versions.json` exists):
 - Fetches the current accession's raw NCBI metadata for each missing entry
@@ -122,27 +141,43 @@ SKIP_PREFECT=true python3 -m flows.parsers.parse_assembly_versions \
 Expected output:
 
 ```
-[1/3] Loading previous parsed results...
+[1/4] Loading previous parsed results...
 Loaded 1 assemblies from previous parsed results.
+  Unique base accessions: 1
 
-[2/3] Identifying newly superseded versions...
+[2/4] Indexing versions already in the historical TSV...
+  Versions already parsed: 0
+  Across base accessions: 0
+
+[3/4] Identifying newly superseded versions...
   Found: 1 newly superseded versions.
   Examples:
     GCA_000222935.1 -> superseded by v2
 
-  Warning: 2 assemblies have missing previous versions.
+  Warning: 3 assemblies have missing previous versions.
+  These may need manual backfill:
     GCA_000412225: need v1, have v2
+    GCA_003706615: need v1, have v3
     GCA_003706615: need v2, have v3
 
-[3/3] Updating historical TSV...
+  To backfill missing versions, run:
+    python -m flows.updaters.update_assembly_versions
+
+[4/4] Updating historical TSV...
   Added 1 newly superseded versions.
 
-ASSEMBLY VERSION PARSE COMPLETE  Superseded: 1  Missing: 2
+ASSEMBLY VERSION PARSE COMPLETE  Superseded: 1  Missing: 3
 ```
 
 Writes:
 - `/tmp/assembly-versions/assembly_historical.tsv` — one row appended for `GCA_000222935.1`
-- `/tmp/assembly-versions/missing_versions.json` — two entries (GCA_000412225, GCA_003706615)
+- `/tmp/assembly-versions/missing_versions.json` — three entries: `GCA_000412225`
+  v1, and `GCA_003706615` v1 and v2
+
+Both new bases are reported at every version below their current one, because
+the historical TSV is empty on this first run. Re-running after step 5 has
+backfilled them reports 0 missing — that filtering is what keeps the daily run
+quiet once the backfill is complete.
 
 No network calls are made in this step.
 

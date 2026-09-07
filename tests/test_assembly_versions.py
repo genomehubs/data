@@ -20,7 +20,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 TAB = "\t"
-NEWLINE = "\n"
 
 HISTORICAL_YAML = (
     Path(__file__).parent.parent / "configs" / "assembly_historical.types.yaml"
@@ -37,6 +36,7 @@ from flows.parsers import (  # noqa: E402
 )
 from flows.parsers.parse_assembly_versions import (  # noqa: E402
     append_superseded_to_tsv,
+    build_gap_records,
     build_missing_version_record,
     build_superseded_row,
     derive_assembly_version_paths,
@@ -51,6 +51,7 @@ from flows.lib.assembly_versions_utils import (  # noqa: E402
     get_accession,
     get_assembly_id,
     get_version_status,
+    load_versions_by_base,
     open_tsv,
     resolve_current_tsv_paths,
     resolve_historical_yaml_path,
@@ -262,6 +263,12 @@ class TestIdentifyNewlySuperseded:
         assert missing == []
 
     def test_missing_with_version_gap(self, tmp_path):
+        """v1 current yesterday, v3 today: v1 is superseded and v2 is a gap.
+
+        Marking v1 superseded is the F5 fix.  The previous implementation
+        looked for v2, failed to find it and dropped v1 on the floor, losing
+        that row when assembly_current.tsv was overwritten.
+        """
         jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_000222935.3"}])
         previous = {
             "GCA_000222935": {
@@ -269,7 +276,9 @@ class TestIdentifyNewlySuperseded:
             }
         }
         superseded, missing = identify_newly_superseded(jsonl, previous)
-        assert superseded == []
+        assert len(superseded) == 1
+        assert superseded[0]["assemblyID"] == "GCA_000222935_1"
+        assert superseded[0]["superseded_by"] == "GCA_000222935.3"
         assert len(missing) == 1
         assert missing[0]["missing_version"] == 2
 
@@ -294,6 +303,250 @@ class TestIdentifyNewlySuperseded:
         superseded, missing = identify_newly_superseded(jsonl, previous)
         assert len(superseded) == 1
         assert len(missing) == 1
+
+
+# ---------------------------------------------------------------------------
+# TestSupersessionDiff (F5)
+# ---------------------------------------------------------------------------
+
+class TestSupersessionDiff:
+    """identify_newly_superseded diffs versions instead of assuming +1.
+
+    Covers the three failure modes of the arithmetic implementation: unchanged
+    assemblies reported as missing, a skipped version losing the row it
+    superseded, and an already-parsed gap being re-reported forever.
+    """
+
+    def _write_jsonl(self, tmp_path, records):
+        path = tmp_path / "new.jsonl"
+        write_jsonl(path, records)
+        return str(path)
+
+    def _previous(self, base, version):
+        return {base: {version: {
+            "genbankAccession": f"{base}.{version}", "taxId": "1",
+        }}}
+
+    # -- failure mode 1: steady-state false positives ------------------------
+
+    def test_unchanged_assembly_reports_nothing(self, tmp_path):
+        """v3 yesterday, v3 today: no supersession, and above all no gap."""
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_000002035.3"}])
+        previous = self._previous("GCA_000002035", 3)
+        superseded, missing = identify_newly_superseded(jsonl, previous)
+        assert superseded == []
+        assert missing == []
+
+    def test_quiet_day_reports_no_missing_versions(self, tmp_path):
+        """A batch of unchanged multi-version assemblies is a complete no-op.
+
+        This is the case that previously produced one missing-version record
+        per multi-version assembly in the dataset.
+        """
+        bases = [f"GCA_00000{i}035" for i in range(1, 6)]
+        jsonl = self._write_jsonl(
+            tmp_path,
+            [{"accession": f"{b}.{v}"} for v, b in enumerate(bases, 2)],
+        )
+        previous = {}
+        for version, base in enumerate(bases, 2):
+            previous.update(self._previous(base, version))
+        superseded, missing = identify_newly_superseded(jsonl, previous)
+        assert superseded == []
+        assert missing == []
+
+    # -- failure mode 2: skipped versions lost -------------------------------
+
+    def test_version_jump_supersedes_previous_and_reports_gap(self, tmp_path):
+        """v3 yesterday, v5 today: v3 is superseded and v4 is missing."""
+        jsonl = self._write_jsonl(
+            tmp_path,
+            [{"accession": "GCA_000222935.5", "releaseDate": "2026-01-02"}],
+        )
+        previous = self._previous("GCA_000222935", 3)
+        superseded, missing = identify_newly_superseded(jsonl, previous)
+        assert len(superseded) == 1
+        assert superseded[0]["assemblyID"] == "GCA_000222935_3"
+        assert superseded[0]["superseded_by_version"] == 5
+        assert superseded[0]["superseded_date"] == "2026-01-02"
+        assert [m["missing_version"] for m in missing] == [4]
+
+    def test_multi_version_gap_emits_one_record_per_version(self, tmp_path):
+        """A gap spanning several versions produces a record for each."""
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_000222935.6"}])
+        previous = self._previous("GCA_000222935", 2)
+        superseded, missing = identify_newly_superseded(jsonl, previous)
+        assert len(superseded) == 1
+        assert [m["missing_version"] for m in missing] == [3, 4, 5]
+        assert all(m["new_version"] == 6 for m in missing)
+        assert all(m["new_accession"] == "GCA_000222935.6" for m in missing)
+
+    def test_supersedes_the_latest_previous_version(self, tmp_path):
+        """With several versions indexed for a base, the newest is superseded."""
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_000222935.4"}])
+        previous = {
+            "GCA_000222935": {
+                1: {"genbankAccession": "GCA_000222935.1", "taxId": "1"},
+                3: {"genbankAccession": "GCA_000222935.3", "taxId": "1"},
+            }
+        }
+        superseded, missing = identify_newly_superseded(jsonl, previous)
+        assert len(superseded) == 1
+        assert superseded[0]["assemblyID"] == "GCA_000222935_3"
+        assert missing == []
+
+    # -- failure mode 3: the historical TSV is never consulted ---------------
+
+    def test_gap_already_in_historical_is_not_reported(self, tmp_path):
+        """v4 sitting in assembly_historical.tsv is not a gap."""
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_000222935.5"}])
+        previous = self._previous("GCA_000222935", 3)
+        historical = {"GCA_000222935": {1, 2, 4}}
+        superseded, missing = identify_newly_superseded(
+            jsonl, previous, historical
+        )
+        assert len(superseded) == 1
+        assert missing == []
+
+    def test_partial_historical_coverage_reports_the_remainder(self, tmp_path):
+        """Only the versions the backfill has not reached are reported."""
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_000222935.6"}])
+        previous = self._previous("GCA_000222935", 2)
+        historical = {"GCA_000222935": {3, 4}}
+        _, missing = identify_newly_superseded(jsonl, previous, historical)
+        assert [m["missing_version"] for m in missing] == [5]
+
+    def test_historical_index_for_another_base_is_ignored(self, tmp_path):
+        """Versions known for a different base do not mask a real gap."""
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_000222935.5"}])
+        previous = self._previous("GCA_000222935", 3)
+        historical = {"GCA_000412225": {4}}
+        _, missing = identify_newly_superseded(jsonl, previous, historical)
+        assert [m["missing_version"] for m in missing] == [4]
+
+    # -- bases new to the pipeline -------------------------------------------
+
+    def test_new_base_at_high_version_reports_every_earlier_version(
+        self, tmp_path
+    ):
+        """A base entering the dataset at v3 needs v1 and v2 backfilled."""
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_999999999.3"}])
+        previous = self._previous("GCA_000222935", 2)
+        superseded, missing = identify_newly_superseded(jsonl, previous)
+        assert superseded == []
+        assert [m["missing_version"] for m in missing] == [1, 2]
+        assert all(m["note"] for m in missing)
+
+    def test_new_base_gap_suppressed_by_historical(self, tmp_path):
+        """A new base whose earlier versions are already parsed is quiet."""
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_999999999.3"}])
+        previous = self._previous("GCA_000222935", 2)
+        historical = {"GCA_999999999": {1, 2}}
+        superseded, missing = identify_newly_superseded(
+            jsonl, previous, historical
+        )
+        assert superseded == []
+        assert missing == []
+
+    def test_new_base_at_v1_is_skipped(self, tmp_path):
+        """Nothing precedes v1, so a brand-new v1 base is not a gap."""
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_999999999.1"}])
+        previous = self._previous("GCA_000222935", 2)
+        superseded, missing = identify_newly_superseded(jsonl, previous)
+        assert superseded == []
+        assert missing == []
+
+    # -- version regressions --------------------------------------------------
+
+    def test_version_regression_supersedes_nothing(self, tmp_path, capsys):
+        """v5 yesterday, v3 today: NCBI withdrew the newer assembly."""
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_000222935.3"}])
+        previous = self._previous("GCA_000222935", 5)
+        superseded, missing = identify_newly_superseded(jsonl, previous)
+        assert superseded == []
+        assert missing == []
+        assert "regressed" in capsys.readouterr().out
+
+    def test_no_regression_warning_on_a_clean_run(self, tmp_path, capsys):
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_000222935.3"}])
+        previous = self._previous("GCA_000222935", 3)
+        identify_newly_superseded(jsonl, previous)
+        assert "regressed" not in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# TestBuildGapRecords
+# ---------------------------------------------------------------------------
+
+class TestBuildGapRecords:
+    """build_gap_records expands a version range minus what is already known."""
+
+    def test_one_record_per_version(self):
+        records = build_gap_records(
+            "GCA_000222935", range(3, 6), set(), 6, "GCA_000222935.6"
+        )
+        assert [r["missing_version"] for r in records] == [3, 4, 5]
+
+    def test_known_versions_filtered_out(self):
+        records = build_gap_records(
+            "GCA_000222935", range(3, 6), {3, 5}, 6, "GCA_000222935.6"
+        )
+        assert [r["missing_version"] for r in records] == [4]
+
+    def test_empty_range_yields_nothing(self):
+        assert build_gap_records(
+            "GCA_000222935", range(4, 4), set(), 4, "GCA_000222935.4"
+        ) == []
+
+    def test_new_series_flag_propagates(self):
+        records = build_gap_records(
+            "GCA_999999999", range(1, 3), set(), 3, "GCA_999999999.3",
+            is_new_series=True,
+        )
+        assert all("note" in r for r in records)
+
+
+# ---------------------------------------------------------------------------
+# TestLoadVersionsByBase
+# ---------------------------------------------------------------------------
+
+class TestLoadVersionsByBase:
+    """load_versions_by_base indexes a TSV's versions without fetching."""
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        assert load_versions_by_base(str(tmp_path / "nope.tsv")) == {}
+
+    def test_empty_file_returns_empty(self, tmp_path):
+        path = tmp_path / "historical.tsv"
+        path.write_text("", encoding="utf-8")
+        assert load_versions_by_base(str(path)) == {}
+
+    def test_versions_grouped_by_base(self, tmp_path):
+        path = tmp_path / "historical.tsv"
+        write_tsv(path, [
+            {"genbankAccession": "GCA_000222935.1", "versionStatus": "superseded"},
+            {"genbankAccession": "GCA_000222935.2", "versionStatus": "superseded"},
+            {"genbankAccession": "GCA_000412225.1", "versionStatus": "superseded"},
+        ])
+        assert load_versions_by_base(str(path)) == {
+            "GCA_000222935": {1, 2},
+            "GCA_000412225": {1},
+        }
+
+    def test_accession_alias_accepted(self, tmp_path):
+        path = tmp_path / "historical.tsv"
+        write_tsv(path, [{"accession": "GCA_000222935.2", "taxId": "1"}])
+        assert load_versions_by_base(str(path)) == {"GCA_000222935": {2}}
+
+    def test_gzipped_file_read(self, tmp_path):
+        path = tmp_path / "historical.tsv.gz"
+        with gzip.open(path, "wt", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(
+                f, fieldnames=["genbankAccession"], delimiter=TAB
+            )
+            writer.writeheader()
+            writer.writerow({"genbankAccession": "GCA_000222935.2"})
+        assert load_versions_by_base(str(path)) == {"GCA_000222935": {2}}
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +601,34 @@ class TestAppendSupersededToTsv:
         tsv = tmp_path / "historical.tsv"
         append_superseded_to_tsv([], str(tsv))
         assert not tsv.exists()
+
+    def test_rows_without_an_assembly_id_are_not_collapsed(self, tmp_path):
+        # Keying several ID-less rows on the same empty string would keep one
+        # and drop the rest on the rewrite.
+        tsv = tmp_path / "historical.tsv"
+        write_tsv(tsv, [
+            self._make_row("GCA_000412225.1", ""),
+            self._make_row("GCA_000412225.2", ""),
+        ])
+        append_superseded_to_tsv(
+            [self._make_row("GCA_000222935.1", "GCA_000222935_1")], str(tsv)
+        )
+        result = read_tsv(tsv)
+        assert len(result) == 3
+        assert {row["genbankAccession"] for row in result} == {
+            "GCA_000412225.1", "GCA_000412225.2", "GCA_000222935.1",
+        }
+
+    def test_rows_with_neither_id_nor_accession_survive(self, tmp_path):
+        tsv = tmp_path / "historical.tsv"
+        write_tsv(tsv, [
+            {"genbankAccession": "", "assemblyID": "", "versionStatus": "superseded"},
+            {"genbankAccession": "", "assemblyID": "", "versionStatus": "current"},
+        ])
+        append_superseded_to_tsv(
+            [self._make_row("GCA_000222935.1", "GCA_000222935_1")], str(tsv)
+        )
+        assert len(read_tsv(tsv)) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +705,87 @@ class TestIncrementalOrchestrator:
         rows = read_tsv(historical_tsv)
         assert len(rows) == 1
         assert rows[0]["versionStatus"] == "superseded"
+
+
+# ---------------------------------------------------------------------------
+# TestOrchestratorConsultsHistorical
+# ---------------------------------------------------------------------------
+
+class TestOrchestratorConsultsHistorical:
+    """The flow reads assembly_historical.tsv before deciding what is missing."""
+
+    def _setup(self, tmp_path, historical_rows):
+        previous_tsv = tmp_path / "previous.tsv"
+        write_tsv(previous_tsv, [
+            {"genbankAccession": "GCA_000222935.3", "taxId": "1"}
+        ])
+        jsonl = tmp_path / "new.jsonl"
+        write_jsonl(jsonl, [
+            {"accession": "GCA_000222935.5", "releaseDate": "2026-01-02"}
+        ])
+        historical_tsv = tmp_path / "historical.tsv"
+        if historical_rows:
+            write_tsv(historical_tsv, historical_rows)
+        return str(jsonl), str(previous_tsv), str(historical_tsv)
+
+    def test_gap_reported_when_historical_lacks_it(self, tmp_path):
+        jsonl, previous_tsv, historical_tsv = self._setup(tmp_path, [])
+        result = parse_assembly_versions(
+            new_jsonl=jsonl,
+            previous_tsv=previous_tsv,
+            historical_tsv=historical_tsv,
+        )
+        assert result["newly_superseded_count"] == 1
+        assert result["missing_versions_count"] == 1
+        assert result["missing_versions"][0]["missing_version"] == 4
+
+    def test_gap_suppressed_when_historical_holds_it(self, tmp_path):
+        """v4 already backfilled: v3 still superseded, nothing reported missing."""
+        jsonl, previous_tsv, historical_tsv = self._setup(tmp_path, [
+            {
+                "genbankAccession": "GCA_000222935.4",
+                "assemblyID": "GCA_000222935_4",
+                "versionStatus": "superseded",
+            }
+        ])
+        result = parse_assembly_versions(
+            new_jsonl=jsonl,
+            previous_tsv=previous_tsv,
+            historical_tsv=historical_tsv,
+        )
+        assert result["newly_superseded_count"] == 1
+        assert result["missing_versions_count"] == 0
+
+    def test_unchanged_assembly_leaves_historical_untouched(self, tmp_path):
+        """A quiet day writes nothing and reports nothing."""
+        previous_tsv = tmp_path / "previous.tsv"
+        write_tsv(previous_tsv, [
+            {"genbankAccession": "GCA_000222935.3", "taxId": "1"}
+        ])
+        jsonl = tmp_path / "new.jsonl"
+        write_jsonl(jsonl, [{"accession": "GCA_000222935.3"}])
+        historical_tsv = tmp_path / "historical.tsv"
+        write_tsv(historical_tsv, [
+            {
+                "genbankAccession": "GCA_000222935.1",
+                "assemblyID": "GCA_000222935_1",
+                "versionStatus": "superseded",
+            },
+            {
+                "genbankAccession": "GCA_000222935.2",
+                "assemblyID": "GCA_000222935_2",
+                "versionStatus": "superseded",
+            },
+        ])
+        before = historical_tsv.read_text(encoding="utf-8")
+        result = parse_assembly_versions(
+            new_jsonl=str(jsonl),
+            previous_tsv=str(previous_tsv),
+            historical_tsv=str(historical_tsv),
+        )
+        assert result["newly_superseded_count"] == 0
+        assert result["missing_versions_count"] == 0
+        assert historical_tsv.read_text(encoding="utf-8") == before
 
 
 # ---------------------------------------------------------------------------
@@ -1117,14 +1479,14 @@ class TestNonDestructiveHistoricalWrite:
         widened = list(rows[0].keys()) + ["genusTaxId"]
         rows[0]["genusTaxId"] = "8001"
         with open(output, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=widened, delimiter=TAB)
+            writer = csv.DictWriter(f, fieldnames=widened, delimiter="\t")
             writer.writeheader()
             writer.writerows(rows)
 
         write_or_append_parsed({"GCA_000222935.1": self._row("GCA_000222935.1")}, config)
 
         with open(output, encoding="utf-8") as f:
-            lines = [line.rstrip(NEWLINE).split(TAB)
+            lines = [line.rstrip("\n").split("\t")
                      for line in f if line.strip()]
         # Every row spans the full widened header, so no column can slide.
         assert {len(line) for line in lines} == {len(widened)}

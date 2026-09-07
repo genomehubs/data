@@ -1,8 +1,14 @@
 """Daily incremental updates to historical assembly records.
 
-Identifies assembly versions newly superseded since the last run and appends
-them to assembly_historical.tsv.  No NCBI fetches are required — data is
-copied directly from the previous assembly_current.tsv parse output.
+Diffs the version current in today's JSONL against the one current at the last
+run, per base accession, and appends whatever that supersedes to
+assembly_historical.tsv.  Versions that neither run observed are reported as
+gaps for the Phase 1.2 / Phase 0 backfill path to fetch, but only when
+assembly_historical.tsv does not already hold them.
+
+No NCBI fetches are made here: superseded rows are copied from the previous
+assembly_current.tsv parse output, and the gap check is a local read of
+assembly_historical.tsv.
 
 Usage:
     python -m flows.parsers.parse_assembly_versions \\
@@ -26,6 +32,7 @@ from flows.lib.assembly_versions_utils import (
     canonicalize_columns,
     get_accession,
     get_assembly_id,
+    load_versions_by_base,
     open_tsv,
     parse_accession,
     resolve_current_tsv_paths,
@@ -148,6 +155,10 @@ def build_missing_version_record(
 ) -> dict:
     """Build a record describing a version missing from the previous parsed TSV.
 
+    One record describes exactly one missing version.  A gap can span several
+    versions (v3 current yesterday, v6 today), in which case build_gap_records
+    emits one of these per version rather than widening this record.
+
     Args:
         base_acc (str): Base accession without version suffix.
         missing_version (int): The version number that could not be found.
@@ -170,57 +181,155 @@ def build_missing_version_record(
     return record
 
 
+def build_gap_records(
+    base_acc: str,
+    gap_versions: range,
+    known_versions: set,
+    new_version: int,
+    new_accession: str,
+    is_new_series: bool = False,
+) -> list[dict]:
+    """Build one missing-version record per version in a gap, minus known ones.
+
+    A gap is only genuine if nothing has parsed the version yet.  Versions
+    already in assembly_historical.tsv — put there by the Phase 0 backfill or
+    by an earlier gap-fill — are filtered out here, so a settled assembly stops
+    being re-reported on every subsequent run.
+
+    Args:
+        base_acc (str): Base accession without version suffix.
+        gap_versions (range): Candidate versions between what was current
+            last run and what is current now, both exclusive.
+        known_versions (set): Version numbers already present locally.
+        new_version (int): The version current in today's JSONL.
+        new_accession (str): Full accession of the current version.
+        is_new_series (bool): True when the base is new to the pipeline.
+
+    Returns:
+        list: Missing-version records, empty when the gap is already covered.
+    """
+    return [
+        build_missing_version_record(
+            base_acc, version, new_version, new_accession,
+            is_new_series=is_new_series,
+        )
+        for version in gap_versions
+        if version not in known_versions
+    ]
+
+
+def print_version_regressions(regressions: list[dict]) -> None:
+    """Report base accessions whose current version went backwards.
+
+    NCBI occasionally suppresses an assembly, so a base that was current at v5
+    yesterday can be current at v3 today.  Nothing is superseded and nothing is
+    missing in that case, but it is worth surfacing: the previous parse holds a
+    row for a version NCBI no longer publishes.
+
+    Args:
+        regressions (list): Records with base_accession, previous_version and
+            new_version keys.
+    """
+    if not regressions:
+        return
+
+    print(f"\n  Warning: {len(regressions)} assemblies regressed to an "
+          "earlier version.")
+    print("  Likely suppressed or rolled back at NCBI:")
+    for r in regressions[:5]:
+        print(
+            f"    {r['base_accession']}: was v{r['previous_version']}, "
+            f"now v{r['new_version']}"
+        )
+    if len(regressions) > 5:
+        print(f"    ... and {len(regressions) - 5} more")
+
+
 def identify_newly_superseded(
     new_jsonl: str,
     previous_by_base: dict[str, dict[int, dict]],
+    historical_by_base: Optional[dict[str, set[int]]] = None,
 ) -> tuple[list[dict], list[dict]]:
-    """Identify versions that became superseded in the current JSONL update.
+    """Diff today's current versions against yesterday's, per base accession.
 
-    For each assembly with version > 1 in the new JSONL, checks whether the
-    immediately preceding version exists in the previous parsed TSV.  Assemblies
-    whose predecessor is found are added to the superseded list; those missing a
-    predecessor are recorded for optional backfill.
+    For each base accession in today's JSONL the version current now is
+    compared with the version that was current at the last run.  Equal
+    versions — the overwhelming majority on any given day — are skipped
+    entirely.  A higher version supersedes the one it replaced, and any
+    versions between the two are candidate gaps, reported only if no phase has
+    parsed them yet.  A lower version means NCBI withdrew the newer assembly;
+    that is reported and otherwise left alone.
+
+    This replaces an earlier implementation that assumed the version had
+    incremented by exactly one, which reported every unchanged multi-version
+    assembly as missing its predecessor.
 
     Args:
         new_jsonl (str): Path to the current assembly_data_report.jsonl.
         previous_by_base (dict): Indexed previous parsed results from
             load_previous_parsed_by_base.
+        historical_by_base (dict, optional): base_accession -> set of versions
+            already in assembly_historical.tsv, from load_versions_by_base.
+            Defaults to empty, which reports every gap as missing.
 
     Returns:
         tuple: (newly_superseded, missing_versions) where each is a list of dicts.
     """
     newly_superseded: list[dict] = []
     missing_versions: list[dict] = []
+    regressions: list[dict] = []
+    historical_by_base = historical_by_base or {}
 
     with open(new_jsonl) as f:
         for line in f:
             assembly = json.loads(line)
             accession = assembly["accession"]
             base_acc, new_version = parse_accession(accession)
+            previous_versions = previous_by_base.get(base_acc) or {}
 
-            if new_version <= 1:
-                continue
+            if not previous_versions:
+                # New to the pipeline: everything below the current version is
+                # a candidate gap, since no previous run ever saw this base.
+                if new_version <= 1:
+                    continue
+                gap_versions = range(1, new_version)
+                is_new_series = True
+            else:
+                previous_version = max(previous_versions)
 
-            previous_version = new_version - 1
+                if new_version == previous_version:
+                    # Unchanged since the last run — the common case, and the
+                    # one the arithmetic implementation got wrong.
+                    continue
 
-            if base_acc not in previous_by_base:
-                missing_versions.append(build_missing_version_record(
-                    base_acc, previous_version, new_version, accession,
-                    is_new_series=True,
+                if new_version < previous_version:
+                    regressions.append({
+                        "base_accession": base_acc,
+                        "previous_version": previous_version,
+                        "new_version": new_version,
+                    })
+                    continue
+
+                release_date = assembly.get("releaseDate") or ""
+                newly_superseded.append(build_superseded_row(
+                    previous_versions[previous_version],
+                    previous_version,
+                    accession,
+                    new_version,
+                    release_date,
                 ))
-                continue
+                gap_versions = range(previous_version + 1, new_version)
+                is_new_series = False
 
-            if previous_version not in previous_by_base[base_acc]:
-                missing_versions.append(build_missing_version_record(
-                    base_acc, previous_version, new_version, accession,
-                ))
-                continue
-
-            previous_row = previous_by_base[base_acc][previous_version]
-            release_date = assembly.get("releaseDate") or ""
-            newly_superseded.append(build_superseded_row(
-                previous_row, previous_version, accession, new_version, release_date,
+            known_versions = set(previous_versions) | historical_by_base.get(
+                base_acc, set()
+            )
+            missing_versions.extend(build_gap_records(
+                base_acc, gap_versions, known_versions, new_version, accession,
+                is_new_series=is_new_series,
             ))
+
+    print_version_regressions(regressions)
 
     return newly_superseded, missing_versions
 
@@ -258,6 +367,27 @@ def merge_fieldnames(
     ordered = [col for col in order if col in union]
     ordered += [col for col in union if col not in set(order)]
     return ordered
+
+
+def merge_key(row: dict, index: int, origin: str) -> str:
+    """Return the identity a historical row is merged on.
+
+    The assembly ID is the intended key, and every row Phase 0 and Phase 1
+    write carries one.  A row that somehow lacks it falls back to its
+    accession, and then to a per-row sentinel: keying several ID-less rows on
+    the same empty string would collapse them into one and silently drop the
+    rest on the next rewrite.
+
+    Args:
+        row (dict): A historical TSV row.
+        index (int): Position of the row within its source.
+        origin (str): Which source the row came from, so sentinels minted for
+            the file and for the new rows cannot collide.
+
+    Returns:
+        str: The merge key.
+    """
+    return get_assembly_id(row) or get_accession(row) or f"{origin}:{index}"
 
 
 def append_superseded_to_tsv(
@@ -298,12 +428,12 @@ def append_superseded_to_tsv(
     if historical_path.exists():
         with open_tsv(historical_tsv) as f:
             reader = csv.DictReader(f, delimiter=DELIMITER)
-            for row in reader:
-                existing[get_assembly_id(row)] = dict(row)
+            for index, row in enumerate(reader):
+                existing[merge_key(row, index, "file")] = dict(row)
             file_order = list(reader.fieldnames or [])
 
-    for row in newly_superseded:
-        existing[get_assembly_id(row)] = row
+    for index, row in enumerate(newly_superseded):
+        existing[merge_key(row, index, "new")] = row
 
     allowed = set(headers) | set(file_order) if headers else None
     fieldnames = merge_fieldnames(
@@ -372,13 +502,15 @@ def parse_assembly_versions(
 ) -> dict:
     """Daily incremental update of the historical assembly TSV.
 
-    Called after parse_ncbi_assemblies completes.  Uses the previous parsed
-    TSV — no NCBI fetches are made.
+    Called after parse_ncbi_assemblies completes.  Reads the previous parsed
+    TSV and the historical TSV — both local — and makes no NCBI fetches.  The
+    historical TSV is read as well as written: its version index is what stops
+    an already-backfilled gap being reported missing on every subsequent run.
 
     Args:
         new_jsonl (str): Path to the current assembly_data_report.jsonl.
         previous_tsv (str): Path to assembly_current.tsv from the previous run.
-        historical_tsv (str): Path to assembly_historical.tsv to update.
+        historical_tsv (str): Path to assembly_historical.tsv to read and update.
         historical_headers (list, optional): Preferred column order for the
             historical TSV.  Defaults to the order already on disk.
 
@@ -391,7 +523,7 @@ def parse_assembly_versions(
     print("ASSEMBLY VERSION PARSE")
     print(f"{separator}\n")
 
-    print("[1/3] Loading previous parsed results...")
+    print("[1/4] Loading previous parsed results...")
     previous_by_base = load_previous_parsed_by_base(previous_tsv)
 
     if not previous_by_base:
@@ -403,12 +535,20 @@ def parse_assembly_versions(
             "missing_versions": [],
         }
 
-    print("\n[2/3] Identifying newly superseded versions...")
-    newly_superseded, missing = identify_newly_superseded(new_jsonl, previous_by_base)
+    print("\n[2/4] Indexing versions already in the historical TSV...")
+    historical_by_base = load_versions_by_base(historical_tsv)
+    known_versions = sum(len(v) for v in historical_by_base.values())
+    print(f"  Versions already parsed: {known_versions}")
+    print(f"  Across base accessions: {len(historical_by_base)}")
+
+    print("\n[3/4] Identifying newly superseded versions...")
+    newly_superseded, missing = identify_newly_superseded(
+        new_jsonl, previous_by_base, historical_by_base
+    )
     print_superseded_summary(newly_superseded)
     print_missing_versions_warning(missing)
 
-    print("\n[3/3] Updating historical TSV...")
+    print("\n[4/4] Updating historical TSV...")
     append_superseded_to_tsv(
         newly_superseded, historical_tsv, headers=historical_headers
     )
