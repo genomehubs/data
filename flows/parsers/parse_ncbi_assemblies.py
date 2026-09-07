@@ -22,7 +22,7 @@ SEQUENCE_DERIVED_ROOTS = {
     "organelles",
 }
 
-CANONICAL_RANKS = ["genus", "family", "order", "class", "phylum", "kingdom"]
+CANONICAL_RANKS = ["species", "genus", "family", "order", "class", "phylum", "kingdom"]
 
 
 def _normalise_taxid(value) -> str | None:
