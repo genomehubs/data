@@ -16,17 +16,28 @@ call site:
   ``"None"`` read as a taxid would collapse unrelated lineages into one bogus
   taxon.
 
-The columns carry taxids only: no rank names, and no species-rank taxid.  So
-the lineage they provide is complete for genus..kingdom attribution, while
-scientific names and subspecies-to-species resolution still come from a
-taxdump when one is supplied.
+The columns carry taxids only, no rank names, so scientific names still come
+from a taxdump when one is supplied.  Species is covered: 630d327 (2026-09-07)
+added it to the parser's canonical ranks, so a row names the species it
+belongs to and a subspecies-level assembly no longer needs a parent chain
+walked to attribute it.
 """
 
 from typing import Optional
 
-# Canonical ranks, finest first.  Matches load_taxonomy.CANONICAL_RANKS; the
-# order matters here because it is the order lineages are reported in.
+# Canonical ancestor ranks, finest first.  Matches load_taxonomy.
+# CANONICAL_RANKS; the order matters here because it is the order lineages are
+# reported in.  Species is deliberately not one of them: it is the level rows
+# are grouped *at*, not an ancestor the sweep walks up to.
 LINEAGE_RANKS = ("genus", "family", "order", "class", "phylum", "kingdom")
+
+SPECIES_RANK = "species"
+
+# Every rank upstream enriches a row with, in its own order.  Rich added
+# species to the parser's CANONICAL_RANKS in 630d327 (2026-09-07), so a
+# current row now names its species directly instead of leaving Phase 3 to
+# walk a taxdump for it.
+ENRICHED_RANKS = (SPECIES_RANK, *LINEAGE_RANKS)
 
 # The single point of repoint if upstream renames the lineage columns.
 RANK_COLUMN_TEMPLATE = "{rank}TaxId"
@@ -53,12 +64,40 @@ def rank_column(rank: str) -> str:
 
 
 def lineage_columns() -> list[str]:
-    """Return every lineage column name, finest rank first.
+    """Return every column upstream enriches a row with, finest rank first.
 
     Returns:
-        list: Column names, e.g. ["genusTaxId", ..., "kingdomTaxId"].
+        list: Column names, ["speciesTaxId", "genusTaxId", ...,
+            "kingdomTaxId"].
     """
-    return [rank_column(rank) for rank in LINEAGE_RANKS]
+    return [rank_column(rank) for rank in ENRICHED_RANKS]
+
+
+def species_column() -> str:
+    """Return the column holding the row's species taxid.
+
+    Returns:
+        str: "speciesTaxId".
+    """
+    return rank_column(SPECIES_RANK)
+
+
+def row_species_taxid(row: dict) -> Optional[int]:
+    """Return the species taxid upstream attached to a row.
+
+    This is what makes the taxdump optional in production: an assembly
+    submitted below species level names its species here, so it can be
+    attributed to that species without a parent chain to walk.
+
+    Args:
+        row (dict): An assembly TSV row.
+
+    Returns:
+        int or None: The species taxid, or None when the column is absent or
+            holds one of the absent sentinels -- which is what an assembly
+            submitted at genus level or above looks like.
+    """
+    return parse_taxid(row.get(species_column()))
 
 
 def parse_taxid(value) -> Optional[int]:
@@ -156,16 +195,28 @@ def register_row_taxa(taxonomy: dict[int, dict], rows: list[dict]) -> dict[str, 
     Only rows carrying a lineage are registered: a row with an unresolvable
     taxid and no lineage columns stays unresolvable, exactly as before.
 
-    Ancestors are registered first, at the rank whose column named them, and
-    every remaining row taxid is then registered at rank "species" -- the
-    finest level anything knows about it, since upstream emits no
-    ``speciesTaxId`` and only a taxdump can collapse a subspecies onto its
-    species.  Taking the ranks in that order matters: an assembly submitted at
-    genus level carries a taxid that another row names as its genus, and
-    registering row taxids first would label that genus a species, or not,
-    depending on which row happened to come first.  Registered as a genus it
-    has no species ancestor, so the sweep skips it and says so -- the same
-    thing the taxdump path does with a genus-level assembly today.
+    Ancestors are registered first, at the rank whose column named them, then
+    the species each row belongs to.  Taking them in that order matters: an
+    assembly submitted at genus level carries a taxid that another row names
+    as its genus, and registering row taxids first would label that genus a
+    species, or not, depending on which row happened to come first.
+
+    Which taxid is the species depends on what upstream supplied.  A row
+    carrying a populated ``speciesTaxId`` names it outright, so a
+    subspecies-level assembly is registered against its species rather than
+    against itself.  Anything else -- an older TSV without the column, or the
+    column present but empty -- falls back to the row's own taxid, the finest
+    level anything then knows about it.
+
+    The fallback deliberately covers the empty-column case rather than
+    treating it as "no species".  Upstream builds the lineage by walking
+    ``rec["lineage"]`` from the taxonomy lookup, and whether that array
+    includes the taxon itself is not something this repo can see: if it does
+    not, every species-level assembly would carry an empty ``speciesTaxId``
+    beside a populated genus, and dropping those rows would discard most of
+    the dataset.  Falling back is right under either shape -- for a
+    species-level row its own taxid *is* the species -- and never does worse
+    than the behaviour before the column existed.
 
     Args:
         taxonomy (dict): The taxonomy contract, mutated in place.
@@ -182,7 +233,11 @@ def register_row_taxa(taxonomy: dict[int, dict], rows: list[dict]) -> dict[str, 
         if not lineage:
             continue
         stats["rows_with_lineage"] += 1
-        lineages.append((get_row_taxid(row), lineage))
+        # The species column when it holds one, the row's own taxid
+        # otherwise.  The fallback applies even when the column is present
+        # but empty -- see the note in the docstring.
+        species_taxid = row_species_taxid(row) or get_row_taxid(row)
+        lineages.append((species_taxid, lineage))
 
     for _, lineage in lineages:
         for rank, ancestor in lineage.items():
@@ -195,11 +250,11 @@ def register_row_taxa(taxonomy: dict[int, dict], rows: list[dict]) -> dict[str, 
                 }
                 stats["nodes_added"] += 1
 
-    for taxid, lineage in lineages:
-        if taxid is not None and taxid not in taxonomy:
-            taxonomy[taxid] = {
+    for species_taxid, lineage in lineages:
+        if species_taxid is not None and species_taxid not in taxonomy:
+            taxonomy[species_taxid] = {
                 "scientific_name": "",
-                "rank": "species",
+                "rank": SPECIES_RANK,
                 "parent": None,
                 "lineage": lineage,
             }

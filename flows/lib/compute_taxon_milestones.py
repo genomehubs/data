@@ -39,6 +39,7 @@ from flows.lib.assembly_lineage import (
     lineage_columns,
     register_row_taxa,
     row_lineage,
+    row_species_taxid,
     rows_have_lineage_columns,
 )
 from flows.lib.assembly_versions_utils import (
@@ -225,7 +226,12 @@ def compute_milestones(rows: list[dict], taxonomy: dict) -> tuple[dict, dict]:
         if taxid is None:
             skipped += 1
             continue
-        species_taxid = resolve_to_species(taxid, taxonomy)
+        # Upstream names the species outright since 630d327; the taxdump
+        # walk is the fallback for rows enriched before that, and for the
+        # dev/test path that has no lineage columns at all.
+        species_taxid = row_species_taxid(row)
+        if species_taxid is None:
+            species_taxid = resolve_to_species(taxid, taxonomy)
         if species_taxid is None:
             # Assemblies submitted above species level land here, as do taxids
             # the taxonomy source does not cover.  Collected rather than
@@ -233,7 +239,7 @@ def compute_milestones(rows: list[dict], taxonomy: dict) -> tuple[dict, dict]:
             unresolved.append((taxid, _accession(row)))
             skipped += 1
             continue
-        node = taxonomy[species_taxid]
+        node = taxonomy.get(species_taxid) or {"lineage": {}}
         # The lineage upstream attached to the row wins where present; the
         # taxdump-derived lineage is the dev/test fallback.
         enriched.append(

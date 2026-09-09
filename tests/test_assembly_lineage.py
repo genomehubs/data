@@ -24,6 +24,7 @@ os.environ["SKIP_PREFECT"] = "true"
 from flows.lib.assembly_lineage import (  # noqa: E402
     ABSENT_TAXID_VALUES,
     LINEAGE_RANKS,
+    SPECIES_RANK,
     get_row_taxid,
     has_lineage_columns,
     lineage_columns,
@@ -31,7 +32,9 @@ from flows.lib.assembly_lineage import (  # noqa: E402
     rank_column,
     register_row_taxa,
     row_lineage,
+    row_species_taxid,
     rows_have_lineage_columns,
+    species_column,
 )
 from flows.lib.compute_taxon_milestones import (  # noqa: E402
     compute_taxon_milestones,
@@ -66,11 +69,14 @@ def enriched_row(
     bioproject="PRJNA1",
     ebp_date="",
     version_status="current",
+    species=None,
 ):
     """Build an assembly row carrying the upstream {rank}TaxId columns.
 
     Ranks absent from ``lineage`` are written as the empty string, matching
-    enrich_assembly_row_with_taxonomy.
+    enrich_assembly_row_with_taxonomy.  ``species`` fills speciesTaxId, which
+    upstream has emitted since 630d327; leaving it None writes the column
+    empty, as upstream does for a taxon with no species in its lineage.
     """
     row = {
         "genbankAccession": accession,
@@ -84,6 +90,7 @@ def enriched_row(
     for rank in LINEAGE_RANKS:
         value = lineage.get(rank, "")
         row[rank_column(rank)] = "" if value == "" else str(value)
+    row[species_column()] = "" if species is None else str(species)
     return row
 
 
@@ -132,7 +139,10 @@ def summary_by_taxid(work_dir):
 
 class TestColumnContract:
     def test_column_names_match_upstream(self):
+        # Order follows the parser's own CANONICAL_RANKS, species first
+        # since 630d327.
         assert lineage_columns() == [
+            "speciesTaxId",
             "genusTaxId",
             "familyTaxId",
             "orderTaxId",
@@ -146,9 +156,19 @@ class TestColumnContract:
         # column lineages would disagree about which ranks exist.
         assert set(LINEAGE_RANKS) == CANONICAL_RANKS
 
-    def test_no_species_column(self):
-        # Upstream emits no speciesTaxId, which is why the species walk stays.
-        assert "speciesTaxId" not in lineage_columns()
+    def test_species_is_not_an_ancestor_rank(self):
+        # Species is the level rows are grouped at, not one the sweep walks
+        # up to, so it stays out of the ancestor lineage.
+        assert SPECIES_RANK not in LINEAGE_RANKS
+        assert species_column() == "speciesTaxId"
+
+    def test_row_lineage_excludes_the_species_column(self):
+        row = enriched_row(
+            "GCA_AA.1", 999001, "2020-01-01", ASELLUS_LINEAGE,
+            species=ASELLUS_AQUATICUS,
+        )
+        assert SPECIES_RANK not in row_lineage(row)
+        assert row_species_taxid(row) == ASELLUS_AQUATICUS
 
 
 class TestParseTaxid:
@@ -303,6 +323,122 @@ class TestRegisterRowTaxa:
         register_row_taxa(taxonomy, [row])
         assert ASELLUS_AQUATICUS not in taxonomy
         assert taxonomy[ASELLUS_GENUS]["rank"] == "genus"
+
+
+# ---------------------------------------------------------------------------
+# The species column
+# ---------------------------------------------------------------------------
+
+# A synthetic subspecies under Asellus aquaticus. Upstream names its species
+# in speciesTaxId; nothing else in the row says the two are related.
+ASELLUS_SUBSPECIES = 999001
+ASELLUS_SUBSPECIES_2 = 999002
+
+
+class TestSpeciesColumn:
+    def test_a_subspecies_registers_against_its_species(self):
+        taxonomy = {}
+        row = enriched_row(
+            "GCA_SS.1", ASELLUS_SUBSPECIES, "2020-01-01", ASELLUS_LINEAGE,
+            species=ASELLUS_AQUATICUS,
+        )
+        register_row_taxa(taxonomy, [row])
+        assert taxonomy[ASELLUS_AQUATICUS]["rank"] == SPECIES_RANK
+        # The subspecies itself is not invented as a species.
+        assert ASELLUS_SUBSPECIES not in taxonomy
+
+    def test_two_subspecies_collapse_onto_one_species(self, tmp_path):
+        # Without the column these are two separate pseudo-species, and the
+        # earlier of the two never gets credited to the species at all.
+        write_tsv(
+            tmp_path / "assembly_current.tsv",
+            [
+                enriched_row(
+                    "GCA_S1.1", ASELLUS_SUBSPECIES, "2019-01-01",
+                    ASELLUS_LINEAGE, species=ASELLUS_AQUATICUS,
+                ),
+                enriched_row(
+                    "GCA_S2.1", ASELLUS_SUBSPECIES_2, "2021-01-01",
+                    ASELLUS_LINEAGE, species=ASELLUS_AQUATICUS,
+                ),
+            ],
+        )
+
+        compute_taxon_milestones(work_dir=str(tmp_path))
+
+        by_taxid = summary_by_taxid(tmp_path)
+        assert ASELLUS_SUBSPECIES not in by_taxid
+        assert ASELLUS_SUBSPECIES_2 not in by_taxid
+        species = by_taxid[ASELLUS_AQUATICUS]
+        assert species["total_assemblies"] == "2"
+        assert species["first_assembly_date"] == "2019-01-01"
+
+    def test_an_empty_species_column_falls_back_to_the_row_taxid(self):
+        # Upstream may or may not put the taxon itself in the lineage it
+        # walks. If it does not, a species-level row carries an empty
+        # speciesTaxId beside a populated genus -- and its own taxid is the
+        # species, so the row must not be dropped.
+        taxonomy = {}
+        row = enriched_row(
+            "GCA_AA.1", ASELLUS_AQUATICUS, "2020-01-01", ASELLUS_LINEAGE
+        )
+        assert row[species_column()] == ""
+        register_row_taxa(taxonomy, [row])
+        assert taxonomy[ASELLUS_AQUATICUS]["rank"] == SPECIES_RANK
+
+    def test_a_row_without_the_column_falls_back(self):
+        # An older TSV, enriched before 630d327.
+        taxonomy = {}
+        row = enriched_row(
+            "GCA_AA.1", ASELLUS_AQUATICUS, "2020-01-01", ASELLUS_LINEAGE
+        )
+        del row[species_column()]
+        register_row_taxa(taxonomy, [row])
+        assert taxonomy[ASELLUS_AQUATICUS]["rank"] == SPECIES_RANK
+
+    def test_the_column_wins_over_the_taxdump_walk(self, tmp_path):
+        # The taxdump knows nothing of this subspecies, so the walk would
+        # skip the row; the column attributes it anyway.
+        write_tsv(
+            tmp_path / "assembly_current.tsv",
+            [
+                enriched_row(
+                    "GCA_SS.1", ASELLUS_SUBSPECIES, "2019-01-01",
+                    ASELLUS_LINEAGE, species=ASELLUS_AQUATICUS,
+                )
+            ],
+        )
+
+        compute_taxon_milestones(
+            work_dir=str(tmp_path), taxdump_path=FIXTURE_DIR
+        )
+
+        by_taxid = summary_by_taxid(tmp_path)
+        assert by_taxid[ASELLUS_AQUATICUS]["total_assemblies"] == "1"
+        # And the taxdump still supplies the name the column cannot.
+        assert by_taxid[ASELLUS_AQUATICUS]["scientific_name"] == "Asellus aquaticus"
+
+    def test_no_taxdump_is_needed_to_collapse_a_subspecies(self, tmp_path):
+        # The point of the column: this run has no taxonomy source but the
+        # row itself, and still attributes to the species.
+        write_tsv(
+            tmp_path / "assembly_current.tsv",
+            [
+                enriched_row(
+                    "GCA_SS.1", ASELLUS_SUBSPECIES, "2019-01-01",
+                    ASELLUS_LINEAGE, species=ASELLUS_AQUATICUS,
+                )
+            ],
+        )
+
+        compute_taxon_milestones(work_dir=str(tmp_path))
+
+        by_taxid = summary_by_taxid(tmp_path)
+        assert by_taxid[ASELLUS_AQUATICUS]["rank"] == SPECIES_RANK
+        # The only assembly in the run, so first at every rank it names.
+        assert by_taxid[ASELLUS_AQUATICUS]["first_assembly_in_ranks"] == (
+            "genus,family,order,class,phylum,kingdom"
+        )
 
 
 # ---------------------------------------------------------------------------

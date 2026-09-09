@@ -113,7 +113,7 @@ repoint if they change.
 |---|---|
 | Rows with lineage columns, no `--taxdump_path` | Production. Lineage from the columns; scientific names stay empty; a row is attributed at its own taxid unless another row names that taxid as an ancestor |
 | `--taxdump_path`, rows without lineage columns | Dev/test, unchanged from Phase 3 |
-| Both | Columns win for lineage; the taxdump supplies names and the subspecies walk |
+| Both | Columns win for lineage and species; the taxdump supplies the names they cannot |
 | Neither | `SystemExit` naming the columns it looked for |
 
 Two traps the module handles:
@@ -147,9 +147,10 @@ milestones disagreeing about the same assembly on real data;
 **Still open with Rich** (none of these blocks a run):
 
 1. Is the literal `"None"` deliberate, or a `str(None)` slip? Handled either way.
-2. `speciesTaxId` — Rich has said he will add one alongside the higher ranks.
-   Until it lands, `resolve_to_species` is what attributes a subspecies-level
-   assembly, and without a taxdump such a row is attributed at its own taxid.
+2. Whether the lineage upstream walks includes the taxon itself. It decides
+   whether a species-level row carries its own taxid in `speciesTaxId` or an
+   empty one; the fallback below is correct either way, so this is a question
+   about how much the column buys, not about whether the code is right.
 
 **Resolved, so not open:** rank *names* are not needed. Nothing in this
 codebase reads `taxon_milestone_summary.tsv` — it is a GoaT import, and the
@@ -164,10 +165,20 @@ does reach the TSV, and `lineage-columns` should pass on a production run.
 It stays a warning rather than an error because the dev case — a run off a local
 taxdump, with no lineage columns — is still legitimate.
 
-There is still no `speciesTaxId` upstream — Rich has said one is coming, and it
-had not landed when this was last checked on 2026-09-03 — so `resolve_to_species`
-stays: without a taxdump, a subspecies-level assembly is attributed at its own
-taxid rather than being collapsed onto its species. The flow prints that caveat when it runs without
+`speciesTaxId` **landed in `630d327` (2026-09-07)**, so Phase 3 reads the
+species a row belongs to instead of walking to it, and a subspecies-level
+assembly is collapsed onto its species with no taxdump present. That is what
+retires the taxdump from the production path.
+
+`resolve_to_species` stays as the fallback, and the fallback matters: a row
+whose `speciesTaxId` is empty — an older TSV, or a taxon whose lineage has no
+species in it — is attributed at its own taxid, exactly as before the column
+existed. The empty case is deliberately not read as "no species": upstream
+builds the lineage by walking `rec["lineage"]`, and whether that array
+includes the taxon itself is not visible from this repo. If it does not, every
+species-level row would carry an empty `speciesTaxId` beside a populated
+genus, and dropping those would discard most of the dataset. Falling back is
+right under either shape. The flow prints that caveat when it runs without
 a taxdump.
 
 ## Step 3: the staged full run

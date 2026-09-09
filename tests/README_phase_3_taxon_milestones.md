@@ -111,10 +111,12 @@ EBP quality standard*, regardless of who submitted.
 
 ```
 1. Load current + historical rows (csv module).
-2. Per row: resolve taxId → species taxid (resolve_to_species); skip if
-   unresolvable (the skips are counted and summarised, not printed per row).
-   Attach species taxid + its canonical lineage — the lineage the row carries
-   in its {rank}TaxId columns where it has them, the taxdump lineage otherwise.
+2. Per row: take the species taxid from the row's speciesTaxId column, or
+   resolve it with resolve_to_species when that column is empty or absent;
+   skip if neither yields one (the skips are counted and summarised, not
+   printed per row). Attach species taxid + its canonical lineage — the
+   lineage the row carries in its {rank}TaxId columns where it has them, the
+   taxdump lineage otherwise.
 3. Sort ALL dated rows by (releaseDate, accession) ascending — one global sort.
    Rows with empty releaseDate are excluded from milestone dates but still
    counted in total_assemblies; the count is logged.
