@@ -211,7 +211,7 @@ Stages 1 and 2 are scripted in `tests/staged_run.py`:
 
 ```bash
 export PATH="<the env holding the datasets CLI>/bin:$PATH"
-export PYTHONUTF8=1     # Windows only; Linux already runs UTF-8
+export PYTHONUTF8=1
 python -m tests.staged_run --work_dir tmp/staged --taxdump_path <taxdump>
 ```
 
