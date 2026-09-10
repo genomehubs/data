@@ -144,46 +144,33 @@ metric while Phase 3 did not, which would have left the summary and the
 milestones disagreeing about the same assembly on real data;
 `test_phase_2_and_phase_3_agree_on_the_metric` pins it.
 
-**Still open with Rich** (none of these blocks a run):
+**Why the taxdump is no longer needed in production.** `speciesTaxId` landed
+in `630d327` (2026-09-07), so Phase 3 reads the species a row belongs to
+instead of walking to it, and a subspecies-level assembly is collapsed onto
+its species with no taxdump present. Species-level rows carry the column too —
+blobtk includes a taxon in its own `lineage` array, emitting it at
+`node_depth: 0` ahead of its ancestors — so the column is populated for the
+bulk of the dataset, not just for the rows submitted below species level.
 
-1. Is the literal `"None"` deliberate, or a `str(None)` slip? Handled either way.
+Scientific names do not change that. The milestone output declares a
+`scientific_name` column, but nothing in this codebase reads the file back —
+it is a GoaT import and the import resolves taxids — so the column stays empty
+in production. A taxdump is a dev and test convenience, not a production
+input.
 
-**Resolved 2026-09-10 by reading blobtk, not by asking:** the lineage array
-*does* include the taxon itself. In `genomehubs/blobtk`,
-`rust/src/parse/nodes.rs`, `Node::to_json()` pushes the node as `node_depth: 0`
-before appending its ancestors, and `write_taxdump` writes each `nodes.jsonl`
-line through it. (`Nodes::lineage()` on its own returns ancestors only — that
-is what made the shape ambiguous from outside.) So a species-level row carries
-its own taxid in `speciesTaxId`, and the column helps the species-level
-majority rather than only the subspecies minority.
+`resolve_to_species` stays as the fallback, and it still matters: an empty
+`speciesTaxId` means an older TSV without the column, or a row above species
+rank whose lineage genuinely has no species in it. Both are attributed at the
+row's own taxid rather than dropped — for a species-level row its own taxid
+*is* the species, so this never does worse than the behaviour before the
+column existed. The flow prints that caveat when it runs without a taxdump.
 
-**Resolved, so not open:** rank *names* are not needed. Nothing in this
-codebase reads `taxon_milestone_summary.tsv` — it is a GoaT import, and the
-import resolves taxids — so `scientific_name` can stay empty in production and
-a production run does not need `--taxdump_path` for naming alone.
-
-**Resolved 2026-08-29 without asking:** the `*TaxId` columns *are* declared in
-`goat-data` `sources/assembly-data/ncbi_datasets_eukaryota.types.yaml` on
-`origin/main`, first present in release `2026.08.27` — as `genus_taxon_id:
-{header: genusTaxId}` and the same for family through kingdom. So the enrichment
-does reach the TSV, and `lineage-columns` should pass on a production run.
-It stays a warning rather than an error because the dev case — a run off a local
-taxdump, with no lineage columns — is still legitimate.
-
-`speciesTaxId` **landed in `630d327` (2026-09-07)**, so Phase 3 reads the
-species a row belongs to instead of walking to it, and a subspecies-level
-assembly is collapsed onto its species with no taxdump present. That is what
-retires the taxdump from the production path.
-
-`resolve_to_species` stays as the fallback, and the fallback matters: a row
-whose `speciesTaxId` is empty — an older TSV, or a taxon whose lineage has no
-species in it — is attributed at its own taxid, exactly as before the column
-existed. The empty case is deliberately not read as "no species". With
-self-inclusion confirmed, an empty column now means one of two narrow things —
-an older TSV without it, or a row above species rank whose lineage genuinely
-has no species — and both are right to attribute at the row's own taxid rather
-than to drop. The flow prints that caveat when it runs without
-a taxdump.
+**The lineage columns reach the TSV.** They are declared in `goat-data`
+`sources/assembly-data/ncbi_datasets_eukaryota.types.yaml` on `origin/main`,
+first present in release `2026.08.27` — `genus_taxon_id: {header: genusTaxId}`
+and the same for family through kingdom — so `lineage-columns` should pass on
+a production run. It stays a warning rather than an error because the dev case,
+a run off a local taxdump with no lineage columns, is still legitimate.
 
 ## Step 3: the staged full run
 

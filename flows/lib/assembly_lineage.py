@@ -16,11 +16,15 @@ call site:
   ``"None"`` read as a taxid would collapse unrelated lineages into one bogus
   taxon.
 
-The columns carry taxids only, no rank names, so scientific names still come
-from a taxdump when one is supplied.  Species is covered: 630d327 (2026-09-07)
-added it to the parser's canonical ranks, so a row names the species it
-belongs to and a subspecies-level assembly no longer needs a parent chain
-walked to attribute it.
+The columns carry taxids only, no rank names, which costs nothing: no phase
+consumes a scientific name.  The milestone output declares a
+``scientific_name`` column, but nothing in this repo reads it back -- the file
+is a GoaT import and the import resolves taxids -- so it stays empty in
+production and is filled only in dev and test, where a taxdump is supplied.
+
+Species is covered: 630d327 (2026-09-07) added it to the parser's canonical
+ranks, so a row names the species it belongs to and a subspecies-level
+assembly no longer needs a parent chain walked to attribute it.
 """
 
 from typing import Optional
