@@ -15,6 +15,11 @@ Phases 0–3 must have run at least once before the validators have anything to 
 
 ## Files added/changed in Phase 4
 
+Phase 4 shipped as three stacked PRs — #13 (schema and path contracts), #14
+(version diffing) and #15 (this one). Two rows below landed with #13 and are
+already on `main`; they are listed because the guide describes them, not
+because they are in this diff.
+
 | File | Purpose |
 |---|---|
 | `flows/lib/assembly_lineage.py` | Reads the upstream `{rank}TaxId` columns: one rank→column mapping, the two absent sentinels, and `register_row_taxa` to turn row lineages into taxonomy nodes |
@@ -24,9 +29,9 @@ Phases 0–3 must have run at least once before the validators have anything to 
 | `tests/test_assembly_lineage.py` | Unit tests for the column contract and the production path |
 | `tests/test_phase_4_validators.py` | Unit tests for both validators, including each failure mode |
 | `tests/test_two_day_simulation.py` | Runs all four phases in sequence over one working directory |
-| `tests/test_assembly_summary.py` | Unit tests for Phase 2.2, which had none |
+| `tests/test_assembly_summary.py` | Unit tests for the Phase 2.2 summary generator, which shipped without any — *merged in #13* |
 | `tests/staged_run.py` | Drives stages 1 and 2 of the staged run against real NCBI data |
-| `.github/workflows/pytest.yml` | Runs `pytest tests/` on every pull request |
+| `.github/workflows/pytest.yml` | Runs `pytest tests/` on every pull request — *merged in #13* |
 
 ## Step 1: `validate_pipeline.py`
 
@@ -93,13 +98,13 @@ bulk JSONL on every run by design, via `update_ncbi_datasets`. Two checks:
 - **`unchanged-input`** — a run whose JSONL matches the previous parse reports zero
   superseded, zero missing, and leaves `assembly_historical.tsv` byte-identical.
   This is what minimising fetches means day to day: nothing is handed to
-  `update_assembly_versions` to fetch. Before the PR-B diff fix this check would
-  have failed on roughly 3,694 spurious entries.
+  `update_assembly_versions` to fetch. Before the diff fix in #14 this check
+  would have failed on roughly 3,694 spurious entries.
 
 With `--work_dir`, the JSONL, `.previous` snapshot and historical TSV are copied
 into a scratch directory first, since the parse rewrites the historical TSV.
 
-## Step 4: the production taxonomy path
+## Step 3: the production taxonomy path
 
 `parse_ncbi_assemblies` attaches the canonical-rank lineage to every assembly row
 as `genusTaxId`, `familyTaxId`, `orderTaxId`, `classTaxId`, `phylumTaxId` and
@@ -139,10 +144,14 @@ than one line per row on a 57,000-row input.
 
 **One sentinel, one place.** `assembly_versions_utils.cell` is what every phase
 reads a cell through, so `""` and the literal `"None"` mean the same thing to
-all of them. Phase 2 previously counted `ebpStandardDate: "None"` as an EBP
-metric while Phase 3 did not, which would have left the summary and the
-milestones disagreeing about the same assembly on real data;
-`test_phase_2_and_phase_3_agree_on_the_metric` pins it.
+all of them. Phase 3's `_has_metric` already read `ebpStandardDate` through
+`cell`, so a literal `"None"` counted as absent; Phase 2's `_has_ebp_metric`
+read the raw column and counted it as an EBP metric, which would have left the
+summary and the milestones disagreeing about the same assembly on real data.
+Resolved in #13 by routing Phase 2 through the same helper rather than by
+special-casing the string in either place —
+`test_phase_2_and_phase_3_agree_on_the_metric` pins the two predicates
+together over `""`, `"None"` and a real date.
 
 **Why the taxdump is no longer needed in production.** `speciesTaxId` landed
 in `630d327` (2026-09-07), so Phase 3 reads the species a row belongs to
@@ -172,11 +181,12 @@ and the same for family through kingdom — so `lineage-columns` should pass on
 a production run. It stays a warning rather than an error because the dev case,
 a run off a local taxdump with no lineage columns, is still legitimate.
 
-## Step 3: the staged full run
+## Step 4: the staged full run
 
-Operational, not code. Do not go straight to 57,236 assemblies, and **do not run
-against real data until PR-A is merged** — before the non-destructive write fix,
-any run exercising the gap-fill path discards the backfill it just built.
+Operational, not code. Do not go straight to 57,236 assemblies. The
+non-destructive write fix this depends on — without it, any run exercising the
+gap-fill path discards the backfill it just built — merged with #13, so a real
+run is no longer blocked on it.
 
 1. **Slice run** — the full chain on a ~200-assembly eukaryote slice:
 
@@ -201,7 +211,7 @@ Stages 1 and 2 are scripted in `tests/staged_run.py`:
 
 ```bash
 export PATH="<the env holding the datasets CLI>/bin:$PATH"
-export PYTHONUTF8=1     # see the note below
+export PYTHONUTF8=1     # Windows only; Linux already runs UTF-8
 python -m tests.staged_run --work_dir tmp/staged --taxdump_path <taxdump>
 ```
 
@@ -224,12 +234,6 @@ two versions of one base, and the diff is then right to call that base
 unchanged — the pipeline already knew the newer version. The stage fails only
 if *nothing* was superseded, which would mean the diff path never fired.
 
-**`PYTHONUTF8=1` is required on Windows.** `update_ncbi_datasets` decodes the
-`datasets` output with the platform encoding; on a cp1252 machine that fails on
-the first non-Latin-1 byte, and subprocess reports it as a zero exit status
-with `stdout` set to `None`. Not a production concern — Linux runs UTF-8, and
-Python coerces the C locale to it — so the export is the fix rather than a
-patch to the flow.
 3. **Full backfill** — overnight, checkpointed; Phase 0 resumes from
    `tmp/checkpoints/` if interrupted.
 4. **Full daily + summary + milestones**, then both validators with `--strict`.
