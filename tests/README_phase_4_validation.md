@@ -147,10 +147,15 @@ milestones disagreeing about the same assembly on real data;
 **Still open with Rich** (none of these blocks a run):
 
 1. Is the literal `"None"` deliberate, or a `str(None)` slip? Handled either way.
-2. Whether the lineage upstream walks includes the taxon itself. It decides
-   whether a species-level row carries its own taxid in `speciesTaxId` or an
-   empty one; the fallback below is correct either way, so this is a question
-   about how much the column buys, not about whether the code is right.
+
+**Resolved 2026-09-10 by reading blobtk, not by asking:** the lineage array
+*does* include the taxon itself. In `genomehubs/blobtk`,
+`rust/src/parse/nodes.rs`, `Node::to_json()` pushes the node as `node_depth: 0`
+before appending its ancestors, and `write_taxdump` writes each `nodes.jsonl`
+line through it. (`Nodes::lineage()` on its own returns ancestors only — that
+is what made the shape ambiguous from outside.) So a species-level row carries
+its own taxid in `speciesTaxId`, and the column helps the species-level
+majority rather than only the subspecies minority.
 
 **Resolved, so not open:** rank *names* are not needed. Nothing in this
 codebase reads `taxon_milestone_summary.tsv` — it is a GoaT import, and the
@@ -173,12 +178,11 @@ retires the taxdump from the production path.
 `resolve_to_species` stays as the fallback, and the fallback matters: a row
 whose `speciesTaxId` is empty — an older TSV, or a taxon whose lineage has no
 species in it — is attributed at its own taxid, exactly as before the column
-existed. The empty case is deliberately not read as "no species": upstream
-builds the lineage by walking `rec["lineage"]`, and whether that array
-includes the taxon itself is not visible from this repo. If it does not, every
-species-level row would carry an empty `speciesTaxId` beside a populated
-genus, and dropping those would discard most of the dataset. Falling back is
-right under either shape. The flow prints that caveat when it runs without
+existed. The empty case is deliberately not read as "no species". With
+self-inclusion confirmed, an empty column now means one of two narrow things —
+an older TSV without it, or a row above species rank whose lineage genuinely
+has no species — and both are right to attribute at the row's own taxid rather
+than to drop. The flow prints that caveat when it runs without
 a taxdump.
 
 ## Step 3: the staged full run

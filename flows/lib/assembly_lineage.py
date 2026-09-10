@@ -209,14 +209,16 @@ def register_row_taxa(taxonomy: dict[int, dict], rows: list[dict]) -> dict[str, 
     level anything then knows about it.
 
     The fallback deliberately covers the empty-column case rather than
-    treating it as "no species".  Upstream builds the lineage by walking
-    ``rec["lineage"]`` from the taxonomy lookup, and whether that array
-    includes the taxon itself is not something this repo can see: if it does
-    not, every species-level assembly would carry an empty ``speciesTaxId``
-    beside a populated genus, and dropping those rows would discard most of
-    the dataset.  Falling back is right under either shape -- for a
-    species-level row its own taxid *is* the species -- and never does worse
-    than the behaviour before the column existed.
+    treating it as "no species".  Upstream fills the column from an entry in
+    ``rec["lineage"]`` whose rank is ``species``, and blobtk puts each taxon
+    into its own lineage array -- ``Node::to_json`` in ``parse/nodes.rs``
+    emits the node itself at ``node_depth: 0`` ahead of its ancestors -- so a
+    species-level assembly names itself and the column is populated.  What is
+    left empty is an older TSV without the column, or a row above species
+    rank, whose lineage genuinely has no species in it; both are attributed at
+    the row's own taxid, the finest level anything then knows about it.  For a
+    species-level row its own taxid *is* the species, so the fallback never
+    does worse than the behaviour before the column existed.
 
     Args:
         taxonomy (dict): The taxonomy contract, mutated in place.
