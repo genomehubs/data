@@ -5,7 +5,7 @@ Phase 2 and Phase 3 flows over fixture assembly TSVs, so the happy path is a
 genuine end-to-end check rather than four hand-written files that agree by
 construction. Each failure case then perturbs exactly one of them.
 
-validate_no_ncbi_fetches is exercised on its own fixture, including a
+validate_daily_diff_is_local is exercised on its own fixture, including a
 deliberate network call to prove the block is real rather than incidental.
 """
 
@@ -27,7 +27,7 @@ from flows.lib.compute_taxon_milestones import (  # noqa: E402
 from flows.lib.generate_assembly_summary import (  # noqa: E402
     generate_assembly_summary,
 )
-from tests import validate_no_ncbi_fetches as no_fetches  # noqa: E402
+from tests import validate_daily_diff_is_local as daily_diff  # noqa: E402
 from tests import validate_pipeline as validator  # noqa: E402
 
 GENUS_TAXID = 8001
@@ -349,18 +349,18 @@ class TestLineageCoverage:
 
 
 # ---------------------------------------------------------------------------
-# validate_no_ncbi_fetches
+# validate_daily_diff_is_local
 # ---------------------------------------------------------------------------
 
 class TestNoNcbiFetches:
-    def test_fixture_run_makes_no_fetches(self):
-        assert no_fetches.check_no_network() == []
+    def test_fixture_run_makes_daily_diff(self):
+        assert daily_diff.check_no_network() == []
 
     def test_unchanged_input_supersedes_nothing(self):
-        assert no_fetches.check_unchanged_input() == []
+        assert daily_diff.check_unchanged_input() == []
 
     def test_both_checks_pass_together(self):
-        assert no_fetches.validate_no_ncbi_fetches() == 0
+        assert daily_diff.validate_daily_diff_is_local() == 0
 
     def test_the_block_is_real(self, monkeypatch, tmp_path):
         # Swap in a parse that opens a socket: the harness must stop it.
@@ -370,10 +370,10 @@ class TestNoNcbiFetches:
             socket_module.socket(socket_module.AF_INET, socket_module.SOCK_STREAM)
             return {"newly_superseded_count": 0, "missing_versions_count": 0}
 
-        monkeypatch.setattr(no_fetches, "parse_assembly_versions", fetching_parse)
-        paths = no_fetches.write_fixture(str(tmp_path))
-        with pytest.raises(no_fetches.NetworkBlocked):
-            no_fetches.run_offline(*paths)
+        monkeypatch.setattr(daily_diff, "parse_assembly_versions", fetching_parse)
+        paths = daily_diff.write_fixture(str(tmp_path))
+        with pytest.raises(daily_diff.NetworkBlocked):
+            daily_diff.run_offline(*paths)
 
     def test_a_fetching_parse_fails_the_check(self, monkeypatch):
         def fetching_parse(**kwargs):
@@ -381,12 +381,12 @@ class TestNoNcbiFetches:
 
             socket_module.create_connection(("ftp.ncbi.nlm.nih.gov", 443))
 
-        monkeypatch.setattr(no_fetches, "parse_assembly_versions", fetching_parse)
-        assert no_fetches.check_no_network() != []
+        monkeypatch.setattr(daily_diff, "parse_assembly_versions", fetching_parse)
+        assert daily_diff.check_no_network() != []
 
     def test_fixture_exercises_the_supersession_and_gap_paths(self, tmp_path):
-        jsonl, previous_tsv, historical_tsv = no_fetches.write_fixture(str(tmp_path))
-        results = no_fetches.run_offline(jsonl, previous_tsv, historical_tsv)
+        jsonl, previous_tsv, historical_tsv = daily_diff.write_fixture(str(tmp_path))
+        results = daily_diff.run_offline(jsonl, previous_tsv, historical_tsv)
         assert results["newly_superseded_count"] == 2
         # Only v4 of the skipping base: v3 is already in the historical TSV.
         assert results["missing_versions_count"] == 1

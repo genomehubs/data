@@ -66,7 +66,7 @@ from flows.parsers.parse_backfill_historical_versions import (  # noqa: E402
 from flows.lib.utils import load_config  # noqa: E402
 from flows.parsers.parse_ncbi_assemblies import parse_ncbi_assemblies  # noqa: E402
 from flows.updaters.update_ncbi_datasets import update_ncbi_datasets  # noqa: E402
-from tests import validate_no_ncbi_fetches as no_fetches  # noqa: E402
+from tests import validate_daily_diff_is_local as daily_diff  # noqa: E402
 from tests import validate_pipeline as validator  # noqa: E402
 
 JSONL_NAME = "assembly_data_report.jsonl"
@@ -258,7 +258,7 @@ def aggregate_and_validate(
 
     banner("VALIDATE")
     failures = validator.validate_pipeline(work_dir=work_dir, yaml_path=yaml_path)
-    failures += no_fetches.validate_no_ncbi_fetches(work_dir=work_dir)
+    failures += daily_diff.validate_daily_diff_is_local(work_dir=work_dir)
     return failures
 
 

@@ -2,7 +2,7 @@
 
 This guide covers the Phase 4 implementation, which has four parts:
 
-- **Validators** (`tests/validate_pipeline.py`, `tests/validate_no_ncbi_fetches.py`):
+- **Validators** (`tests/validate_pipeline.py`, `tests/validate_daily_diff_is_local.py`):
   run after a pipeline run to check the four output TSVs against each other, and to
   prove the daily version parse never reaches the network.
 - **Production taxonomy** (`flows/lib/assembly_lineage.py`): Phase 3 now reads the
@@ -25,7 +25,7 @@ because they are in this diff.
 | `flows/lib/assembly_lineage.py` | Reads the upstream `{rank}TaxId` columns: one rank→column mapping, the two absent sentinels, and `register_row_taxa` to turn row lineages into taxonomy nodes |
 | `flows/lib/compute_taxon_milestones.py` | Uses the row lineage where present and the taxdump otherwise; no longer requires `--taxdump_path` |
 | `tests/validate_pipeline.py` | Nine cross-file checks over the four output TSVs |
-| `tests/validate_no_ncbi_fetches.py` | Runs the daily version parse with sockets and subprocesses blocked |
+| `tests/validate_daily_diff_is_local.py` | Runs the daily version parse with sockets and subprocesses blocked |
 | `tests/test_assembly_lineage.py` | Unit tests for the column contract and the production path |
 | `tests/test_phase_4_validators.py` | Unit tests for both validators, including each failure mode |
 | `tests/test_two_day_simulation.py` | Runs all four phases in sequence over one working directory |
@@ -79,11 +79,11 @@ Two deliberate looser readings of the Phase 4 plan:
   independently, rather than only whole triples, so an inversion is caught even
   when the third date is absent.
 
-## Step 2: `validate_no_ncbi_fetches.py`
+## Step 2: `validate_daily_diff_is_local.py`
 
 ```bash
-python -m tests.validate_no_ncbi_fetches            # built-in fixture
-python -m tests.validate_no_ncbi_fetches --work_dir tmp   # real inputs, on a copy
+python -m tests.validate_daily_diff_is_local            # built-in fixture
+python -m tests.validate_daily_diff_is_local --work_dir tmp   # real inputs, on a copy
 ```
 
 Scope is `parse_assembly_versions` only, **not** the daily pipeline: it fetches the
@@ -196,7 +196,7 @@ run is no longer blocked on it.
    python -m flows.lib.generate_assembly_summary --work_dir tmp --yaml_path <config>
    python -m flows.lib.compute_taxon_milestones --work_dir tmp --taxdump_path <taxdump>
    python -m tests.validate_pipeline --work_dir tmp --yaml_path <config> --strict
-   python -m tests.validate_no_ncbi_fetches --work_dir tmp
+   python -m tests.validate_daily_diff_is_local --work_dir tmp
    ```
 
 2. **Two-day simulation** — snapshot the current TSV to `.previous`, bump a version
@@ -251,4 +251,4 @@ linted.
 
 Note that `tests/test_data` is excluded by `.git/info/exclude`, so **any new fixture
 placed there will not be committed**. Every Phase 4 fixture is therefore built
-inline in `tmp_path`, or by `write_fixture` in `validate_no_ncbi_fetches.py`.
+inline in `tmp_path`, or by `write_fixture` in `validate_daily_diff_is_local.py`.

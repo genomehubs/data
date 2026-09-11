@@ -1,11 +1,17 @@
-"""Validate that the daily assembly-version parse makes no NCBI fetches.
+"""Validate that the daily assembly-version diff stays local.
 
-Phase 4 step 2. Scope is parse_assembly_versions only, not the daily pipeline
-as a whole: update_ncbi_datasets pulls the bulk JSONL on every run by design.
-The premise of parse_assembly_versions is that superseded rows are copied from
-the previous parse and gaps are checked against assembly_historical.tsv, so
+Phase 4 step 2. Scope is parse_assembly_versions only, never the daily
+pipeline as a whole -- update_ncbi_datasets pulls the bulk JSONL on every run
+by design, and Phase 0 and Phase 1.2 fetch from NCBI because that is their
+job.  What must stay local is the daily diff: superseded rows are copied from
+the previous parse, and gaps are checked against assembly_historical.tsv, so
 zero network calls is the correct assertion for any input, not only unchanged
 ones.
+
+The property is "stays local" rather than "makes no fetches" because the step
+can reintroduce daily fetching without making a single call itself: emit a
+bogus missing-versions list and update_assembly_versions fetches every entry
+on it.  That is what the unchanged-input check below catches.
 
 Two checks:
 
@@ -21,8 +27,8 @@ fix it reported every unchanged multi-version assembly as missing its
 predecessor, so this check would have failed on roughly 3,694 entries.
 
 Usage:
-    python -m tests.validate_no_ncbi_fetches
-    python -m tests.validate_no_ncbi_fetches --work_dir tmp
+    python -m tests.validate_daily_diff_is_local
+    python -m tests.validate_daily_diff_is_local --work_dir tmp
 """
 
 import csv
@@ -308,7 +314,7 @@ def check_unchanged_input() -> list[str]:
     return problems
 
 
-def validate_no_ncbi_fetches(work_dir: str = None, max_examples: int = 5) -> int:
+def validate_daily_diff_is_local(work_dir: str = None, max_examples: int = 5) -> int:
     """Run both checks and print a report.
 
     Args:
@@ -321,7 +327,7 @@ def validate_no_ncbi_fetches(work_dir: str = None, max_examples: int = 5) -> int
     """
     separator = "=" * 80
     print(f"\n{separator}")
-    print("NCBI FETCH VALIDATION")
+    print("DAILY DIFF LOCALITY VALIDATION")
     print(f"{separator}\n")
     print(f"  Inputs: {work_dir or 'built-in fixture'}\n")
 
@@ -344,9 +350,9 @@ def validate_no_ncbi_fetches(work_dir: str = None, max_examples: int = 5) -> int
 
     print(f"\n{separator}")
     if failures:
-        print(f"NCBI FETCH VALIDATION FAILED: {failures} checks")
+        print(f"DAILY DIFF LOCALITY VALIDATION FAILED: {failures} checks")
     else:
-        print("NCBI FETCH VALIDATION PASSED")
+        print("DAILY DIFF LOCALITY VALIDATION PASSED")
     print(f"{separator}\n")
 
     return failures
@@ -355,8 +361,8 @@ def validate_no_ncbi_fetches(work_dir: str = None, max_examples: int = 5) -> int
 if __name__ == "__main__":
     args = _parse_args(
         [WORK_DIR],
-        description="Validate that the daily version parse makes no NCBI fetches",
+        description="Validate that the daily assembly-version diff stays local",
     )
     # WORK_DIR defaults to ".", which here means "use the built-in fixture".
     source_dir = args.work_dir if args.work_dir not in (None, ".") else None
-    raise SystemExit(1 if validate_no_ncbi_fetches(work_dir=source_dir) else 0)
+    raise SystemExit(1 if validate_daily_diff_is_local(work_dir=source_dir) else 0)

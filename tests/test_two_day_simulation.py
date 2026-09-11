@@ -12,7 +12,7 @@ today's current TSV as parse_ncbi_assemblies would, aggregates it into the
 summary and the milestones, and runs both validators over the result.
 
 The whole run is offline: nothing here reaches NCBI, which is the property
-validate_no_ncbi_fetches then asserts of the daily parse specifically.
+validate_daily_diff_is_local then asserts of the daily parse specifically.
 """
 
 import csv
@@ -42,7 +42,7 @@ from flows.lib.generate_assembly_summary import (  # noqa: E402
 from flows.parsers.parse_assembly_versions import (  # noqa: E402
     parse_assembly_versions,
 )
-from tests import validate_no_ncbi_fetches as no_fetches  # noqa: E402
+from tests import validate_daily_diff_is_local as daily_diff  # noqa: E402
 from tests import validate_pipeline as validator  # noqa: E402
 
 CURRENT_TSV = "assembly_current.tsv"
@@ -251,5 +251,5 @@ class TestValidators:
             work_dir=str(simulation["work_dir"]), strict=True
         ) == 0
 
-    def test_the_daily_parse_made_no_fetches(self, simulation):
-        assert no_fetches.check_no_network(str(simulation["work_dir"])) == []
+    def test_the_daily_parse_made_daily_diff(self, simulation):
+        assert daily_diff.check_no_network(str(simulation["work_dir"])) == []
