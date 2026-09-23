@@ -156,6 +156,51 @@ def enrich_assembly_row_with_taxonomy(row: dict, taxonomy_lookup: dict[str, dict
     return row
 
 
+def locate_bioproject_lookup(work_dir: str) -> str:
+    """Locate the Bioproject lookup file in the given working directory."""
+    bioproject_path = os.path.join(work_dir, "bioprojects.tsv")
+    if not os.path.exists(bioproject_path):
+        raise FileNotFoundError(f"Bioproject lookup file not found in {work_dir}")
+    return bioproject_path
+
+
+def load_bioproject_lookup(bioproject_path: str) -> dict[str, list[str]]:
+    """Load the Bioproject lookup file into a dictionary."""
+    lookup: dict[str, list[str]] = {}
+    with open(bioproject_path, "r") as f:
+        for line in f:
+            parts = line.strip().split("\t")
+            acronym, bioproject_id, *_ = parts
+            if not bioproject_id or not acronym:
+                continue
+            if bioproject_id in lookup:
+                lookup[bioproject_id].append(acronym)
+            else:
+                lookup[bioproject_id] = [acronym]
+    return lookup
+
+
+def enrich_assembly_row_with_project_acronyms(row: dict, bioproject_lookup: dict[str, list[str]]) -> dict:
+    """Attach the Bioproject acronym to a parsed assembly row.
+
+    Expected row keys:
+      - bioProjectAccession
+    Output keys:
+      - projectAcronym
+    """
+    bioproject_value = row.get("bioProjectAccession")
+    if bioproject_value is None:
+        return row
+    if not isinstance(bioproject_value, list):
+        bioproject_value = [bioproject_value]
+
+    acronyms = []
+    for key in bioproject_value:
+        acronyms.extend(bioproject_lookup.get(key) or [])
+    row["projectAcronym"] = ",".join(acronyms) if acronyms else "None"
+    return row
+
+
 def enrich_parsed_assemblies(parsed: dict, work_dir: str) -> dict:
     """Load the taxonomy lookup from a sibling convention and enrich the parsed assembly rows."""
     try:
@@ -164,9 +209,17 @@ def enrich_parsed_assemblies(parsed: dict, work_dir: str) -> dict:
         print(f"Warning: {e}. Skipping taxonomy enrichment.")
         return parsed
     taxonomy_lookup = load_taxonomy_lookup(taxonomy_path)
+    try:
+        bioproject_path = locate_bioproject_lookup(work_dir)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Warning: {e}. Skipping project acronym enrichment.")
+        bioproject_lookup = {}
+    else:
+        bioproject_lookup = load_bioproject_lookup(bioproject_path)
 
     for row in parsed.values():
         enrich_assembly_row_with_taxonomy(row, taxonomy_lookup)
+        enrich_assembly_row_with_project_acronyms(row, bioproject_lookup)
 
     return parsed
 
