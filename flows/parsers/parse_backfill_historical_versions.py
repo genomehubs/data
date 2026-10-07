@@ -27,8 +27,8 @@ from flows.lib.assembly_versions_utils import (
     COL_ACCESSION,
     find_all_assembly_versions,
     get_accession,
+    load_current_versions,
     open_tsv,
-    parse_accession,
     parse_version,
     setup_cache_directories,
 )
@@ -151,27 +151,28 @@ def save_checkpoint(
 def identify_assemblies_needing_backfill(input_path: str) -> list[dict]:
     """Identify assemblies with version > 1 that need historical backfill.
 
+    One entry per GenBank base, read through load_current_versions.  Backfilling
+    a paired GCF record would discover RefSeq versions and write each under
+    the GCA it pairs with -- colliding with, or overwriting, the row the GCA
+    record's own backfill wrote for that version.  The same base listed twice
+    in the input, as the gap-fill JSONL can, is processed once.
+
     Args:
         input_path (str): Path to assembly_data_report.jsonl.
 
     Returns:
         list: Assembly info dicts describing what needs backfilling.
     """
-    assemblies = []
-    with open(input_path) as f:
-        for line in f:
-            record = json.loads(line)
-            accession = record["accession"]
-            base_acc, version = parse_accession(accession)
-
-            if version > 1:
-                assemblies.append({
-                    "base_accession": base_acc,
-                    "current_version": version,
-                    "current_accession": accession,
-                    "historical_versions_needed": list(range(1, version)),
-                })
-    return assemblies
+    return [
+        {
+            "base_accession": base_acc,
+            "current_version": current["version"],
+            "current_accession": current["accession"],
+            "historical_versions_needed": list(range(1, current["version"])),
+        }
+        for base_acc, current in load_current_versions(input_path).items()
+        if current["version"] > 1
+    ]
 
 
 def resolve_output_path(config: Config, work_dir: str) -> str:

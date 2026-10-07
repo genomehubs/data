@@ -32,6 +32,7 @@ from flows.lib.assembly_versions_utils import (
     canonicalize_columns,
     get_accession,
     get_assembly_id,
+    load_current_versions,
     load_versions_by_base,
     open_tsv,
     parse_accession,
@@ -260,6 +261,10 @@ def identify_newly_superseded(
     parsed them yet.  A lower version means NCBI withdrew the newer assembly;
     that is reported and otherwise left alone.
 
+    Records are keyed on their GenBank accession, as every TSV here is: a
+    paired GCF record is read as its GCA pair, so it neither shows up as a
+    base with no history nor queues a RefSeq version for backfill.
+
     This replaces an earlier implementation that assumed the version had
     incremented by exactly one, which reported every unchanged multi-version
     assembly as missing its predecessor.
@@ -280,54 +285,51 @@ def identify_newly_superseded(
     regressions: list[dict] = []
     historical_by_base = historical_by_base or {}
 
-    with open(new_jsonl) as f:
-        for line in f:
-            assembly = json.loads(line)
-            accession = assembly["accession"]
-            base_acc, new_version = parse_accession(accession)
-            previous_versions = previous_by_base.get(base_acc) or {}
+    for base_acc, current in load_current_versions(new_jsonl).items():
+        accession = current["accession"]
+        new_version = current["version"]
+        previous_versions = previous_by_base.get(base_acc) or {}
 
-            if not previous_versions:
-                # New to the pipeline: everything below the current version is
-                # a candidate gap, since no previous run ever saw this base.
-                if new_version <= 1:
-                    continue
-                gap_versions = range(1, new_version)
-                is_new_series = True
-            else:
-                previous_version = max(previous_versions)
+        if not previous_versions:
+            # New to the pipeline: everything below the current version is
+            # a candidate gap, since no previous run ever saw this base.
+            if new_version <= 1:
+                continue
+            gap_versions = range(1, new_version)
+            is_new_series = True
+        else:
+            previous_version = max(previous_versions)
 
-                if new_version == previous_version:
-                    # Unchanged since the last run — the common case, and the
-                    # one the arithmetic implementation got wrong.
-                    continue
+            if new_version == previous_version:
+                # Unchanged since the last run — the common case, and the
+                # one the arithmetic implementation got wrong.
+                continue
 
-                if new_version < previous_version:
-                    regressions.append({
-                        "base_accession": base_acc,
-                        "previous_version": previous_version,
-                        "new_version": new_version,
-                    })
-                    continue
+            if new_version < previous_version:
+                regressions.append({
+                    "base_accession": base_acc,
+                    "previous_version": previous_version,
+                    "new_version": new_version,
+                })
+                continue
 
-                release_date = assembly.get("releaseDate") or ""
-                newly_superseded.append(build_superseded_row(
-                    previous_versions[previous_version],
-                    previous_version,
-                    accession,
-                    new_version,
-                    release_date,
-                ))
-                gap_versions = range(previous_version + 1, new_version)
-                is_new_series = False
-
-            known_versions = set(previous_versions) | historical_by_base.get(
-                base_acc, set()
-            )
-            missing_versions.extend(build_gap_records(
-                base_acc, gap_versions, known_versions, new_version, accession,
-                is_new_series=is_new_series,
+            newly_superseded.append(build_superseded_row(
+                previous_versions[previous_version],
+                previous_version,
+                accession,
+                new_version,
+                current["release_date"],
             ))
+            gap_versions = range(previous_version + 1, new_version)
+            is_new_series = False
+
+        known_versions = set(previous_versions) | historical_by_base.get(
+            base_acc, set()
+        )
+        missing_versions.extend(build_gap_records(
+            base_acc, gap_versions, known_versions, new_version, accession,
+            is_new_series=is_new_series,
+        ))
 
     print_version_regressions(regressions)
 

@@ -473,6 +473,125 @@ class TestSupersessionDiff:
         identify_newly_superseded(jsonl, previous)
         assert "regressed" not in capsys.readouterr().out
 
+    # -- release date ---------------------------------------------------------
+
+    def test_release_date_read_from_assembly_info(self, tmp_path):
+        """The datasets report nests releaseDate under assemblyInfo."""
+        jsonl = self._write_jsonl(tmp_path, [{
+            "accession": "GCA_000222935.4",
+            "assemblyInfo": {"releaseDate": "2026-09-01"},
+        }])
+        previous = self._previous("GCA_000222935", 3)
+        superseded, _ = identify_newly_superseded(jsonl, previous)
+        assert superseded[0]["superseded_date"] == "2026-09-01"
+
+    # -- duplicate records ---------------------------------------------------
+
+    def test_a_base_listed_twice_reports_each_gap_once(self, tmp_path):
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCA_999999999.3"}] * 2)
+        _, missing = identify_newly_superseded(jsonl, {})
+        assert [m["missing_version"] for m in missing] == [1, 2]
+
+
+# ---------------------------------------------------------------------------
+# TestPairedRefSeqRecords
+# ---------------------------------------------------------------------------
+
+class TestPairedRefSeqRecords:
+    """A paired GCF record is read as its GCA pair, as the current TSV is.
+
+    datasets emits a paired assembly as a GCA record and a GCF record, and
+    parse_ncbi_assemblies files both under genbankAccession.  Diffing the GCF
+    record on its own accession found no history for a GCF base, reported
+    every RefSeq version below it missing on every run, and queued it for a
+    backfill that could never satisfy it.
+    """
+
+    def _write_jsonl(self, tmp_path, records):
+        path = tmp_path / "new.jsonl"
+        write_jsonl(path, records)
+        return str(path)
+
+    def _previous(self, base, version):
+        return {base: {version: {
+            "genbankAccession": f"{base}.{version}", "taxId": "1",
+        }}}
+
+    def test_unchanged_paired_assembly_reports_nothing(self, tmp_path):
+        """The GCF_002575655 case from the full run: v3 on both sides."""
+        jsonl = self._write_jsonl(tmp_path, [
+            {"accession": "GCA_002575655.3", "pairedAccession": "GCF_002575655.3"},
+            {"accession": "GCF_002575655.3", "pairedAccession": "GCA_002575655.3"},
+        ])
+        previous = self._previous("GCA_002575655", 3)
+        superseded, missing = identify_newly_superseded(jsonl, previous)
+        assert superseded == []
+        assert missing == []
+
+    def test_refseq_numbering_is_not_read_as_genbank_history(self, tmp_path):
+        """GCF_000004015.4 pairs with GCA_000004015.3; v3 is all there is."""
+        jsonl = self._write_jsonl(tmp_path, [
+            {"accession": "GCF_000004015.4", "pairedAccession": "GCA_000004015.3"},
+        ])
+        previous = self._previous("GCA_000004015", 3)
+        superseded, missing = identify_newly_superseded(jsonl, previous)
+        assert superseded == []
+        assert missing == []
+
+    def test_gca_record_supplies_the_release_date(self, tmp_path):
+        jsonl = self._write_jsonl(tmp_path, [
+            {
+                "accession": "GCF_000222935.2",
+                "pairedAccession": "GCA_000222935.2",
+                "assemblyInfo": {"releaseDate": "2026-09-02"},
+            },
+            {
+                "accession": "GCA_000222935.2",
+                "pairedAccession": "GCF_000222935.2",
+                "assemblyInfo": {"releaseDate": "2026-09-01"},
+            },
+        ])
+        previous = self._previous("GCA_000222935", 1)
+        superseded, _ = identify_newly_superseded(jsonl, previous)
+        assert len(superseded) == 1
+        assert superseded[0]["superseded_by"] == "GCA_000222935.2"
+        assert superseded[0]["superseded_date"] == "2026-09-01"
+
+    def test_gcf_record_alone_is_diffed_as_its_pair(self, tmp_path):
+        """Without its GCA record, the GCF record still speaks for the GCA."""
+        jsonl = self._write_jsonl(tmp_path, [{
+            "accession": "GCF_000222935.5",
+            "pairedAccession": "GCA_000222935.2",
+            "assemblyInfo": {"releaseDate": "2026-09-02"},
+        }])
+        previous = self._previous("GCA_000222935", 1)
+        superseded, missing = identify_newly_superseded(jsonl, previous)
+        assert superseded[0]["superseded_by"] == "GCA_000222935.2"
+        # A RefSeq release date is not the GenBank one, so none is recorded.
+        assert superseded[0]["superseded_date"] == ""
+        assert missing == []
+
+    def test_unpaired_gcf_keeps_its_own_accession(self, tmp_path):
+        """parse_ncbi_assemblies files an unpaired GCF under the GCF itself."""
+        jsonl = self._write_jsonl(tmp_path, [{"accession": "GCF_000141845.2"}])
+        previous = self._previous("GCF_000141845", 1)
+        superseded, _ = identify_newly_superseded(jsonl, previous)
+        assert superseded[0]["superseded_by"] == "GCF_000141845.2"
+
+    def test_backfill_scans_one_entry_per_genbank_base(self, tmp_path):
+        jsonl = self._write_jsonl(tmp_path, [
+            {"accession": "GCA_000004015.3", "pairedAccession": "GCF_000004015.4"},
+            {"accession": "GCF_000004015.4", "pairedAccession": "GCA_000004015.3"},
+            {"accession": "GCA_000222935.1"},
+        ])
+        assemblies = backfill_module.identify_assemblies_needing_backfill(jsonl)
+        assert assemblies == [{
+            "base_accession": "GCA_000004015",
+            "current_version": 3,
+            "current_accession": "GCA_000004015.3",
+            "historical_versions_needed": [1, 2],
+        }]
+
 
 # ---------------------------------------------------------------------------
 # TestBuildGapRecords
@@ -903,6 +1022,25 @@ class TestUpdateAssemblyVersionsFlow:
         records = [json.loads(line) for line in jsonl_path.read_text().strip().splitlines()]
         assert len(records) == 1
         assert records[0]["accession"] == "GCA_000222935.2"
+
+    @patch.object(updater_module, "setup_cache_directories")
+    @patch.object(updater_module, "fetch_version_metadata")
+    def test_each_accession_fetched_once(self, mock_fetch, mock_setup, tmp_path):
+        """A base missing v1 and v2 is one fetch and one JSONL line, not two."""
+        mock_fetch.return_value = {"accession": "GCA_000222935.3"}
+        missing_json = self._write_missing_json(tmp_path, [
+            {
+                "base_accession": "GCA_000222935",
+                "missing_version": version,
+                "new_version": 3,
+                "new_accession": "GCA_000222935.3",
+            }
+            for version in (1, 2)
+        ])
+        update_assembly_versions(missing_json=missing_json, work_dir=str(tmp_path))
+        mock_fetch.assert_called_once_with("GCA_000222935.3", str(tmp_path))
+        jsonl_path = tmp_path / "missing_assembly_versions.jsonl"
+        assert len(jsonl_path.read_text().strip().splitlines()) == 1
 
     @patch.object(updater_module, "setup_cache_directories")
     @patch.object(updater_module, "fetch_version_metadata")

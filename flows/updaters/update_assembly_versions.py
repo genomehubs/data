@@ -74,8 +74,13 @@ def update_assembly_versions(
         )
         return
 
+    # missing_versions.json holds one entry per missing version, and every
+    # entry for a base names the same current accession.  Phase 0 rediscovers
+    # the versions below it from that one record, so fetch each accession once.
+    accessions = list(dict.fromkeys(entry["new_accession"] for entry in missing))
+
     output_jsonl = os.path.join(work_dir, OUTPUT_JSONL)
-    total = len(missing)
+    total = len(accessions)
     fetched = 0
     failed = 0
 
@@ -83,13 +88,13 @@ def update_assembly_versions(
     print(f"\n{separator}")
     print("ASSEMBLY VERSION UPDATE")
     print(f"{separator}")
-    print(f"  Entries to fetch: {total}")
+    print(f"  Missing versions: {len(missing)}")
+    print(f"  Assemblies to fetch: {total}")
     print(f"  Output JSONL:     {output_jsonl}")
     print(f"{separator}\n")
 
     with open(output_jsonl, "w", encoding="utf-8") as f:
-        for i, entry in enumerate(missing):
-            new_accession = entry["new_accession"]
+        for i, new_accession in enumerate(accessions):
             print(f"[{i + 1}/{total}] Fetching {new_accession}...", end=" ", flush=True)
             metadata = fetch_version_metadata(new_accession, work_dir)
             if metadata:

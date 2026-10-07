@@ -112,6 +112,91 @@ def get_accession(row: dict) -> str:
     return _first_present(row, ACCESSION_ALIASES)
 
 
+def record_genbank_accession(record: dict) -> str:
+    """Return the GenBank accession an NCBI JSONL record is tracked under.
+
+    ``datasets summary genome taxon`` emits a paired assembly twice, once as
+    its GCA record and once as its GCF record.  Every TSV the pipeline writes
+    is keyed on ``genbankAccession``, and parse_ncbi_assemblies folds the GCF
+    record onto its GCA pair, so version history is GenBank history: the GCF
+    record is read as its GCA pair.  A GCF record with no GCA pair keeps its
+    own accession, which is also what parse_ncbi_assemblies writes for it.
+
+    RefSeq versions cannot stand in for GenBank ones -- they are numbered
+    independently, and GCF_000004015.1 and .2 both pair with GCA_000004015.1.
+
+    Args:
+        record (dict): One NCBI JSONL record.
+
+    Returns:
+        str: The versioned accession to diff and backfill on.
+    """
+    accession = record.get("accession", "")
+    paired = record.get("pairedAccession") or ""
+    if accession.startswith("GCF_") and paired.startswith("GCA_"):
+        return paired
+    return accession
+
+
+def record_release_date(record: dict) -> str:
+    """Return an NCBI JSONL record's release date, or "" when it has none.
+
+    The datasets report nests it under ``assemblyInfo``; a flat
+    ``releaseDate`` is accepted too.
+
+    Args:
+        record (dict): One NCBI JSONL record.
+
+    Returns:
+        str: The release date.
+    """
+    return (
+        record.get("releaseDate")
+        or (record.get("assemblyInfo") or {}).get("releaseDate")
+        or ""
+    )
+
+
+def load_current_versions(jsonl_path: str) -> dict[str, dict]:
+    """Index the version each base accession is current at in an NCBI JSONL.
+
+    Records are read through record_genbank_accession, so a paired GCF record
+    and its GCA record collapse onto one GenBank base.  Where both are present
+    the GCA record wins, since it carries the GenBank release date; a GCF
+    record read alone contributes no date, because its own is RefSeq's.
+    Where a base appears at more than one version the highest is kept.
+
+    Args:
+        jsonl_path (str): Path to assembly_data_report.jsonl.
+
+    Returns:
+        dict: base_accession -> {"accession", "version", "release_date"}.
+    """
+    current: dict[str, dict] = {}
+    with open(jsonl_path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            accession = record_genbank_accession(record)
+            if not accession:
+                continue
+            base_acc, version = parse_accession(accession)
+            native = accession == record.get("accession")
+            held = current.get(base_acc)
+            if held and (
+                held["version"] > version
+                or (held["version"] == version and not native)
+            ):
+                continue
+            current[base_acc] = {
+                "accession": accession,
+                "version": version,
+                "release_date": record_release_date(record) if native else "",
+            }
+    return current
+
+
 def get_assembly_id(row: dict) -> str:
     """Return a row's assembly ID across all three spellings in the pipeline.
 
