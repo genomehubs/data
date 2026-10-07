@@ -70,18 +70,18 @@ def update_tolid_prefixes(output_path: str) -> bool:
         output_path (str): Path to save the taxonomy dump.
     """
     http_path = "https://gitlab.com/wtsi-grit/darwin-tree-of-life-sample-naming/-/raw/master/tolids.txt?ref_type=heads"
-    status = None
+    matches_previous = None
     complete = False
     if tolid_file_is_up_to_date(output_path, http_path):
-        status = True
+        matches_previous = True
         complete = True
         line_count = 0
         with open(f"{output_path}/tolids.txt", "r") as f:
             line_count = sum(1 for _ in f)
     else:
-        status = False
+        matches_previous = False
         complete, line_count = fetch_tolid_prefixes(local_path=output_path, http_path=http_path)
-    print(f"TolID file matches previous: {status}")
+    print(f"TolID file matches previous: {matches_previous}")
 
     if complete:
         emit_event(
@@ -89,11 +89,11 @@ def update_tolid_prefixes(output_path: str) -> bool:
             resource={
                 "prefect.resource.id": f"fetch.tolid.prefixes.{output_path}",
                 "prefect.resource.type": "tolid.prefixes",
-                "prefect.resource.matches.previous": "yes" if status else "no",
+                "prefect.resource.matches.previous": "yes" if matches_previous else "no",
             },
-            payload={"matches_previous": status, "line_count": line_count},
+            payload={"matches_previous": matches_previous, "line_count": line_count},
         )
-    return status
+    return complete
 
 
 if __name__ == "__main__":
