@@ -41,7 +41,7 @@ deployments:
       # The root taxon Id to use. 2759 is the taxon Id for Eukaryota
       root_taxid: "2759"
       # Local path to save the NCBI datasets JSONL file
-      output_path: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}/ncbi_datasets_eukaryota.jsonl"
+      output_path: "/home/ubuntu/tmp/test/assembly-historical/ncbi_datasets_eukaryota.jsonl"
       # The S3 path to save the NCBI datasets JSONL file
       s3_path: s3://goat/resources/assembly-data/ncbi_datasets_eukaryota.jsonl
     schedules:
@@ -62,7 +62,7 @@ deployments:
       # This is the S3 path where the previous parsed data can be found
       s3_path: "s3://goat/sources/assembly-data/"
       # The local path where the YAML/TSV file pair will be saved
-      work_dir: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}"
+      work_dir: "/home/ubuntu/tmp/test/assembly-historical"
       # A flag to indicate if the flow should append to the existing TSV file
       # This step pulls sequence reports for each chromosomal assembly so is very slow to run in full
       append: true
@@ -76,16 +76,52 @@ deployments:
           prefect.resource.type: ncbi.datasets
           prefect.resource.matches.previous:
             - "no"
-          prefect.resource.id: "fetch.datasets./home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}/ncbi_datasets_eukaryota.jsonl"
+          prefect.resource.id: "fetch.datasets./home/ubuntu/tmp/test/assembly-historical/ncbi_datasets_eukaryota.jsonl"
         expect:
           - update.ncbi.datasets.finished
         parameters:
           parser: "ParserEnum.NCBI_ASSEMBLIES"
           yaml_path: "../goat-data-main/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml"
           s3_path: "s3://goat/sources/assembly-data/"
-          work_dir: "/home/ubuntu/tmp/test/assembly-data-{{ prefect.variables.date }}"
+          work_dir: "/home/ubuntu/tmp/test/assembly-historical"
           append: true
           dry_run: true
+    work_pool: *goat_data_work_pool
+
+  - name: backfill-historical-versions
+    # One-time backfill into assembly_historical.tsv. Not scheduled; run once before the first daily diff
+    entrypoint: flows/parsers/parse_backfill_historical_versions.py:backfill_historical_versions
+    parameters:
+      # The NCBI datasets JSONL in the work_dir, used to find assemblies with version > 1
+      input_path: "/home/ubuntu/tmp/test/assembly-historical/ncbi_datasets_eukaryota.jsonl"
+      # Schema for assembly_historical.tsv
+      yaml_path: "configs/assembly_historical.types.yaml"
+      # Output, cache and checkpoint directory
+      work_dir: "/home/ubuntu/tmp/test/assembly-historical"
+    work_pool: *goat_data_work_pool
+
+  - name: assembly-versions-daily
+    # Daily historical diff, assembly summary and taxon milestones for the NCBI TSV
+    # Not scheduled. The flow is triggered when the NCBI yaml/tsv pair validates
+    entrypoint: flows/orchestrators/assembly_versions_daily.py:assembly_versions_daily
+    parameters:
+      # Directory holding the JSONL, parsed TSV, .previous snapshot and historical TSV
+      work_dir: "/home/ubuntu/tmp/test/assembly-historical"
+      # The current NCBI datasets JSONL written by update-ncbi-datasets
+      jsonl_path: "/home/ubuntu/tmp/test/assembly-historical/ncbi_datasets_eukaryota.jsonl"
+      # Working copy of the YAML inside work_dir, so file_name resolves to work_dir
+      yaml_path: "/home/ubuntu/tmp/test/assembly-historical/ncbi_datasets_eukaryota.types.yaml"
+      # NCBI taxdump used to resolve lineage for taxon milestones
+      taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
+    triggers:
+      - enabled: true
+        type: event
+        match:
+          prefect.resource.type: validate.file
+          prefect.resource.id: "validate.file.../goat-data-main/sources/assembly-data/ncbi_datasets_eukaryota.types.yaml"
+          prefect.resource.is.valid: "yes"
+        expect:
+          - validate.file.pair.finished
     work_pool: *goat_data_work_pool
 
   - name: update-tolid-prefixes
