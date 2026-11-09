@@ -113,4 +113,3 @@ if __name__ == "__main__":
         "Fetch, parse, and validate the TSV file.",
     )
     fetch_parse_validate(**vars(args))
-``
