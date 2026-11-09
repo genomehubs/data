@@ -10,6 +10,7 @@ from flows.lib.shared_args import (
     DRY_RUN,
     MIN_ASSIGNED,
     MIN_VALID,
+    PER_FILE_SUBDIR,
     S3_PATH,
     TAXDUMP_PATH,
     WORK_DIR,
@@ -19,7 +20,7 @@ from flows.lib.shared_args import (
 )
 from flows.lib.utils import enum_action
 from flows.parsers.register import register_plugins  # noqa: E402
-from flows.validators.validate_file_pair import validate_file_pair
+from flows.validators.validate_file_pair import validate_and_publish
 
 PARSERS = register_plugins()
 
@@ -43,6 +44,7 @@ def fetch_parse_validate(
     dry_run: bool = False,
     min_valid: int = 0,
     min_assigned: int = 0,
+    per_file_subdir: bool = False,
 ) -> None:
     """
     Fetch, parse, and validate the TSV file.
@@ -58,6 +60,7 @@ def fetch_parse_validate(
         dry_run (bool, optional): Flag to run the flow without updating s3/git files.
         min_valid (int, optional): Minimum expected number of valid rows.
         min_assigned (int, optional): Minimum expected number of assigned taxa.
+        per_file_subdir (bool, optional): Publish each pair to its own subdirectory.
     """
     header_status = fetch_previous_file_pair(yaml_path=yaml_path, s3_path=s3_path, work_dir=work_dir)
     if not header_status:
@@ -71,10 +74,16 @@ def fetch_parse_validate(
         append=append,
         data_freeze_path=data_freeze_path,
     )
-    if dry_run:
-        # set s3_path = None to skip copying the validated file to S3/git
-        s3_path = None
-    validate_file_pair(yaml_path, work_dir, taxdump_path, s3_path, min_valid, min_assigned)
+    validate_and_publish(
+        yaml_path,
+        work_dir,
+        taxdump_path=taxdump_path,
+        s3_path=s3_path,
+        min_valid=min_valid,
+        min_assigned=min_assigned,
+        per_file_subdir=per_file_subdir,
+        dry_run=dry_run,
+    )
 
 
 if __name__ == "__main__":
@@ -99,7 +108,9 @@ if __name__ == "__main__":
             DRY_RUN,
             MIN_VALID,
             MIN_ASSIGNED,
+            PER_FILE_SUBDIR,
         ],
         "Fetch, parse, and validate the TSV file.",
     )
     fetch_parse_validate(**vars(args))
+``

@@ -150,6 +150,14 @@ OUTPUT_PATH = {
     "keys": {"help": "Path to the output file.", "type": str},
 }
 
+PER_FILE_SUBDIR = {
+    "flags": ["--per_file_subdir"],
+    "keys": {
+        "help": "Publish each validated pair to its own subdirectory named after the TSV.",
+        "action": "store_true",
+    },
+}
+
 QUERY_OPTIONS = {
     "flags": ["-q", "--query_options"],
     "keys": {"help": "Options for the query.", "type": str},

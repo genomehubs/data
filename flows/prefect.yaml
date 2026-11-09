@@ -68,7 +68,7 @@ deployments:
       append: true
       # A flag to indicate if the flow should run in dry run mode
       # If set to `true`, will not upload the TSV file to S3
-      dry_run: true
+      dry_run: false
     triggers:
       - enabled: true
         type: event
@@ -85,7 +85,7 @@ deployments:
           s3_path: "s3://goat/sources/assembly-data/"
           work_dir: "/home/ubuntu/tmp/test/assembly-historical"
           append: true
-          dry_run: true
+          dry_run: false
     work_pool: *goat_data_work_pool
 
   - name: backfill-historical-versions
@@ -225,7 +225,7 @@ deployments:
       work_dir: "/home/ubuntu/tmp/test/assembly-data-vgp-phase1"
       data_freeze_path: "s3://goat/resources/data-freezes/vgp_phase1_list_data_freeze.tsv"
       append: true
-      dry_run: true
+      dry_run: false
     triggers:
       - enabled: true
         type: event
@@ -243,7 +243,7 @@ deployments:
           work_dir: "/home/ubuntu/tmp/test/assembly-data-vgp-phase1"
           data_freeze_path: "s3://goat/resources/data-freezes/vgp_phase1_list_data_freeze.tsv"
           append: true
-          dry_run: true
+          dry_run: false
     work_pool: *goat_data_work_pool
 
   - name: update-nhm-status-list
@@ -472,7 +472,7 @@ deployments:
       yaml_dir: "../goat-data-main/sources/status-lists"
       work_dir: "/home/ubuntu/tmp/test/status-lists/google-sheets"
       s3_path: "s3://goat/sources/status-lists/"
-      dry_run: true
+      dry_run: false
     triggers:
       - enabled: true
         type: event
@@ -484,7 +484,7 @@ deployments:
           yaml_dir: "../goat-data-main/sources/status-lists"
           work_dir: "/home/ubuntu/tmp/test/status-lists/google-sheets"
           s3_path: "s3://goat/sources/status-lists/"
-          dry_run: true
+          dry_run: false
     work_pool: *goat_data_work_pool
 
   - name: fetch-parse-validate-blobtoolkit
@@ -496,7 +496,7 @@ deployments:
       yaml_path: "../goat-data-main/sources/btk/btk.types.yaml"
       s3_path: "s3://goat/sources/btk/"
       work_dir: "/home/ubuntu/tmp/test/assembly-data"
-      dry_run: true
+      dry_run: false
     triggers:
       - enabled: true
         type: event
@@ -509,7 +509,7 @@ deployments:
           yaml_path: "../goat-data-main/sources/btk/btk.types.yaml"
           s3_path: "s3://goat/sources/btk/"
           work_dir: "/home/ubuntu/tmp/test/assembly-data"
-          dry_run: true
+          dry_run: false
     work_pool: *goat_data_work_pool
 
   - name: fetch-parse-validate-refseq-organelles
@@ -520,7 +520,7 @@ deployments:
       yaml_path: "../goat-data-main/sources/assembly-data/refseq_organelles.types.yaml"
       s3_path: "s3://goat/sources/assembly-data/"
       work_dir: "/home/ubuntu/tmp/test/assembly-data"
-      dry_run: true
+      dry_run: false
     triggers:
       - enabled: true
         type: event
@@ -533,7 +533,7 @@ deployments:
           yaml_path: "../goat-data-main/sources/assembly-data/refseq_organelles.types.yaml"
           s3_path: "s3://goat/sources/assembly-data/"
           work_dir: "/home/ubuntu/tmp/test/assembly-data"
-          dry_run: true
+          dry_run: false
     work_pool: *goat_data_work_pool
 
   - name: fetch-parse-validate-sra-data
@@ -545,7 +545,7 @@ deployments:
       yaml_path: "../goat-data-main/sources/sra/sra.types.yaml"
       s3_path: "s3://goat/sources/sra/"
       work_dir: "/home/ubuntu/tmp/test/assembly-data"
-      dry_run: true
+      dry_run: false
     triggers:
       - enabled: true
         type: event
@@ -558,7 +558,7 @@ deployments:
           yaml_path: "../goat-data-main/sources/sra/sra.types.yaml"
           s3_path: "s3://goat/sources/sra/"
           work_dir: "/home/ubuntu/tmp/test/assembly-data"
-          dry_run: true
+          dry_run: false
     work_pool: *goat_data_work_pool
 
   - name: fetch-parse-validate-vgp-status
@@ -570,7 +570,7 @@ deployments:
       yaml_path: "../goat-data-main/sources/status-lists/FILE_VGP_Ordinal_Phase1.types.yaml"
       s3_path: "s3://goat/sources/status-lists/"
       work_dir: "/home/ubuntu/tmp/test/status-lists"
-      dry_run: true
+      dry_run: false
     triggers:
       - enabled: true
         type: event
@@ -583,7 +583,7 @@ deployments:
           yaml_path: "../goat-data-main/sources/status-lists/FILE_VGP_Ordinal_Phase1.types.yaml"
           s3_path: "s3://goat/sources/status-lists/"
           work_dir: "/home/ubuntu/tmp/test/status-lists"
-          dry_run: true
+          dry_run: false
     work_pool: *goat_data_work_pool
 
   - name: fetch-parse-validate-jgi-status
@@ -594,7 +594,7 @@ deployments:
       yaml_path: "../goat-data-main/sources/assembly-data/1kfg_manual_bioprojects.types.yaml"
       s3_path: "s3://goat/sources/assembly-data/"
       work_dir: "/home/ubuntu/tmp/test/assembly-data"
-      dry_run: true
+      dry_run: false
     triggers:
       - enabled: true
         type: event
@@ -607,7 +607,7 @@ deployments:
           yaml_path: "../goat-data-main/sources/assembly-data/1kfg_manual_bioprojects.types.yaml"
           s3_path: "s3://goat/sources/assembly-data/"
           work_dir: "/home/ubuntu/tmp/test/assembly-data"
-          dry_run: true
+          dry_run: false
     work_pool: *goat_data_work_pool
 
   - name: fetch-parse-validate-ucsc-assemblies
@@ -619,7 +619,7 @@ deployments:
       yaml_path: "../goat-data-main/sources/assembly-data/ucsc_ids.types.yaml"
       s3_path: "s3://goat/sources/assembly-data/"
       work_dir: "/home/ubuntu/tmp/test/assembly-data"
-      dry_run: true
+      dry_run: false
     triggers:
       - enabled: true
         type: event
@@ -632,7 +632,7 @@ deployments:
           yaml_path: "../goat-data-main/sources/assembly-data/ucsc_ids.types.yaml"
           s3_path: "s3://goat/sources/assembly-data/"
           work_dir: "/home/ubuntu/tmp/test/assembly-data"
-          dry_run: true
+          dry_run: false
     work_pool: *goat_data_work_pool
 
   - name: fetch-parse-validate-nhm-status
@@ -644,7 +644,7 @@ deployments:
       yaml_path: "../goat-data-main/sources/status-lists/FILE_DTOL_nhm.types.yaml"
       s3_path: "s3://goat/sources/status-lists/"
       work_dir: "/home/ubuntu/tmp/test/status-lists"
-      dry_run: true
+      dry_run: false
     triggers:
       - enabled: true
         type: event
@@ -657,5 +657,5 @@ deployments:
           yaml_path: "../goat-data-main/sources/status-lists/FILE_DTOL_nhm.types.yaml"
           s3_path: "s3://goat/sources/status-lists/"
           work_dir: "/home/ubuntu/tmp/test/status-lists"
-          dry_run: true
+          dry_run: false
     work_pool: *goat_data_work_pool
