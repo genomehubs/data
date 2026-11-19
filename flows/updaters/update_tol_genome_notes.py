@@ -18,7 +18,7 @@ def connect_to_portal():
     print("Connecting to ToL portal...")
     prtl = portal()
     data_filter = DataSourceFilter()
-    data_filter.and_ = {"gn_date_published": {"exists": {}}}
+    data_filter.and_ = {"published_date": {"exists": {}}}
     return prtl.get_list("genome_note", object_filters=data_filter)
 
 
@@ -30,7 +30,7 @@ def get_published_status(genome_note, *args):
 
 def get_projects(genome_note, *args):
     """Return comma-separated list of project IDs associated with the genome note."""
-    return ",".join(genome_note.gn_tolid.sts_sample_sts_project_union or [])
+    return ",".join(genome_note.tolid.sample_project_union or [])
 
 
 def get_published_status_project(genome_note, field_name=None):
@@ -46,7 +46,7 @@ def get_published_status_project(genome_note, field_name=None):
     # e.g. sequencing_status_asg → asg
     project_acronym = field_name.split("_")[-1].lower()
 
-    projects = genome_note.gn_tolid.sts_sample_sts_project_union or []
+    projects = genome_note.tolid.sample_project_unionn or []
     projects = [p.lower() for p in projects]
 
     return "published" if project_acronym in projects else ""
@@ -56,13 +56,13 @@ def get_published_status_project(genome_note, field_name=None):
 def fetch_tol_genome_notes(file_path: str, min_lines: int) -> int:
 
     fields = [
-        {"name": "ncbi_taxon_id", "spec": "gn_species.id"},
+        {"name": "ncbi_taxon_id", "spec": "species.id"},
         {"name": "doi", "spec": "id"},
-        {"name": "gn_species_name", "spec": "gn_species_name"},
-        {"name": "gn_assembly.id", "spec": "gn_assembly.id"},
-        {"name": "gn_pmid", "spec": "gn_pmid"},
-        {"name": "gn_date_published", "spec": "gn_date_published"},
-        {"name": "gn_passed_pr", "spec": "gn_passed_pr"},
+        {"name": "gn_species_name", "spec": "species_name"},
+        {"name": "gn_assembly.id", "spec": "assembly.id"},
+        {"name": "gn_pmid", "spec": "pmid"},
+        {"name": "gn_date_published", "spec": "published_date"},
+        {"name": "gn_passed_pr", "spec": "passed_pr"},
         {"name": "sequencing_status", "spec": get_published_status},
         {"name": "published", "spec": get_projects},
         {"name": "sequencing_status_aegis", "spec": get_published_status_project},
