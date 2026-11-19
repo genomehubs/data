@@ -5,7 +5,7 @@ from flows.lib.shared_args import MIN_RECORDS, OUTPUT_PATH, S3_PATH, parse_args,
 from flows.lib.utils import upload_to_s3
 from flows.updaters.tol_utils import get_field_value
 
-PROJECT_LIST = ["AEGIS", "ASG", "BAT1K", "DTOL", "ERGA", "ERGAPI", "PSYCHE", "VGP"]
+PROJECT_LIST = ["AEGIS", "ASG", "BAT1K", "CULI", "DTOL", "ERGA", "ERGAPI", "PSYCHE", "VGP"]
 
 ORDERED_MILESTONES = [
     "sample_collected",
@@ -33,8 +33,9 @@ def connect_to_portal():
     print("Connecting to ToL portal...")
     prtl = portal()
     data_filter = DataSourceFilter()
-    data_filter.and_ = {"sts_sample_sts_accept_date_min": {"exists": {}}}
+    data_filter.and_ = {"sample_accept_date_min": {"exists": {}}}
     return prtl.get_list("species", object_filters=data_filter)
+
 
 
 # -----------------------------
@@ -44,27 +45,27 @@ def connect_to_portal():
 
 def get_projects(species, *args):
     """Return comma-separated list of project acronyms associated with the species."""
-    return ",".join(species.sts_sample_sts_project_union or [])
+    return ",".join(species.sample_project_union or [])
 
 
 def get_gals(species, *args):
     """Return comma-separated list of GAL names associated with the species."""
-    return ",".join(species.sts_sample_sts_gal_name_union or [])
+    return ",".join(species.sample_gal_name_union or [])
 
 
 def get_collected_status(species, *args):
-    """Return 'sample_collected' if species has an ID, otherwise empty string."""
-    return "sample_collected" if species.sts_sample_sts_accept_date_min else ""
+    """Return 'sample_collected' if species has been accepted for shipping, otherwise empty string."""
+    return "sample_collected" if species.sample_accept_date_min else ""
 
 
 def get_acquired_status(species, *args):
     """Return 'sample_acquired' if species has a received date, otherwise empty string."""
-    return "sample_acquired" if species.sts_sample_sts_receive_date_min else ""
+    return "sample_acquired" if species.sample_receive_date_min else ""
 
 
 def get_in_the_lab_status(species, *args):
     """Return 'data_generation' if species has a date of active lab work, otherwise empty string."""
-    return "data_generation" if species.benchling_tissue_prep_benchling_sampleprep_date_min else ""
+    return "data_generation" if species.tissue_prep_sampleprep_date_min else ""
 
 
 def map_tola_status(species, *args):
@@ -79,12 +80,12 @@ def map_tola_status(species, *args):
         "7 ignore": "data_generation",
     }
 
-    return status_to_map.get(species.informatics_tolid_informatics_status_summary_min, "")
+    return status_to_map.get(species.status_summary_min, "")
 
 
 def get_resample_status(species, *args):
     """Return project acronyms if species is flagged for recollection, otherwise empty string."""
-    return get_projects(species) if species.sts_sequencing_material_status == "RECOLLECTION_REQUIRED" else ""
+    return get_projects(species) if species.sequencing_material_status == "RECOLLECTION_REQUIRED" else ""
 
 
 def pick_latest_status(species, *args):
@@ -116,7 +117,7 @@ def get_project_and_milestones(species):
 
     possible_projects = PROJECT_LIST
 
-    projects = [p.upper() for p in (species.sts_sample_sts_project_union or [])]
+    projects = [p.upper() for p in (species.sample_project_union or [])]
     project_string = ",".join(projects)
 
     latest_status = pick_latest_status(species)
@@ -148,18 +149,18 @@ def fetch_tol_portal_status(file_path: str, min_lines: int) -> int:
 
     fields = [
         {"name": "ncbi_taxon_id", "spec": "id"},
-        {"name": "scientific_name", "spec": "sts_scientific_name"},
-        {"name": "family", "spec": "sts_family"},
+        {"name": "scientific_name", "spec": "scientific_name"},
+        {"name": "family", "spec": "family"},
         {"name": "tolid", "spec": "tolid_prefix"},
         {"name": "long_list", "spec": get_projects},
         {"name": "other_priority", "spec": get_projects},
         {
             "name": "tola_summary_status",
-            "spec": "informatics_tolid_informatics_status_summary_min",
+            "spec": "tolid_status_summary_min",
         },
         {
             "name": "tola_detailed_status",
-            "spec": "informatics_tolid_informatics_status_min",
+            "spec": "tolid_status_min",
         },
         {"name": "tola_translated_status", "spec": map_tola_status},
         {"name": "recollection_needed", "spec": get_resample_status},
@@ -246,3 +247,4 @@ if __name__ == "__main__":
     )
 
     update_tol_portal_status(**vars(args))
+
