@@ -113,6 +113,10 @@ deployments:
       yaml_path: "/home/ubuntu/tmp/test/assembly-historical/ncbi_datasets_eukaryota.types.yaml"
       # NCBI taxdump used to resolve lineage for taxon milestones
       taxdump_path: "/home/ubuntu/tmp/test/ncbi-taxonomy"
+      # Scratch directory for the gap-fill JSONL, kept out of work_dir for the glob wrappers
+      gap_fill_dir: "/home/ubuntu/tmp/test/assembly-historical-gapfill"
+      # Schema for assembly_historical.tsv, same path as backfill-historical-versions
+      historical_yaml_path: "configs/assembly_historical.types.yaml"
     triggers:
       - enabled: true
         type: event
