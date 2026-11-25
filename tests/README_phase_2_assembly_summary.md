@@ -56,6 +56,15 @@ under its **plain** name to copy over unchanged rows.
 **same `work_dir`**, current first, so the `.previous` snapshot is visible to the
 incremental step. The existing pipeline already satisfies this.
 
+## The "None" sentinel
+
+Upstream writes the literal string `"None"` into a cell whose value was absent
+when the row was formatted. Every column this flow reads goes through
+`assembly_versions_utils.cell`, which reads `"None"` and `""` alike as empty —
+so `ebpStandardDate: "None"` is not counted as an EBP metric, and a
+`releaseDate` of `"None"` is summarised as empty. Phase 3 applies the same rule
+to the same columns; `tests/test_assembly_summary.py` pins that the two agree.
+
 ## Phase 2.2: what it produces
 
 `assembly_version_summary.tsv` — one row per base accession:

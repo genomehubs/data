@@ -15,6 +15,7 @@ Usage:
 import csv
 import os
 from collections import defaultdict
+from typing import Iterable, cast
 
 from flows.lib.assembly_versions_utils import (
     cell,
@@ -73,7 +74,7 @@ def load_assemblies(current_tsv: str, historical_tsv: str) -> list[dict]:
             continue
         count = 0
         with open_tsv(path) as f:
-            for row in csv.DictReader(f, delimiter="\t"):
+            for row in csv.DictReader(cast(Iterable[str], f), delimiter="\t"):
                 # Normalise to 'accession' so the rest of the code is uniform
                 row["accession"] = get_accession(row)
                 rows.append(row)

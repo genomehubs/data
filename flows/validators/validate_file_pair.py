@@ -2,16 +2,12 @@
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 from typing import Optional
 
-import boto3
-
 from flows.lib import utils
 from flows.lib.conditional_import import emit_event, flow, task
-from flows.lib.shared_tasks import get_filenames
 from flows.validators.args import parse_args
 
 
@@ -69,33 +65,6 @@ def validate_yaml_file(
 
 
 @task()
-def transfer_validated(yaml_path: str, work_dir: str, s3_path: str) -> None:
-    """
-    Transfer the validated YAML file to S3.
-
-    Args:
-        yaml_path (str): Path to the validated YAML file.
-        work_dir (str): Path to the working directory.
-        s3_path (str): Path to the TSV directory on S3.
-    """
-    config = utils.load_config(yaml_path)
-    local_yaml_path = os.path.join(work_dir, os.path.basename(yaml_path))
-    (local_tsv_path, remote_tsv_path) = get_filenames(config, s3_path, work_dir)
-
-    # Transfer the validated TSV file to S3
-    bucket, key = s3_path.removeprefix("s3://").split("/", 1)
-    s3 = boto3.client("s3")
-    s3.upload_file(local_tsv_path, bucket, key)
-    print(f"Uploaded {local_tsv_path} to {remote_tsv_path}")
-
-    # Copy the local YAML file to yaml_path on local disk
-    shutil.copy(local_yaml_path, yaml_path)
-    print(f"Copied {local_yaml_path} to {yaml_path}")
-
-    # TODO: handle names, exclusions, and other subdirectories
-
-
-@task()
 def check_min_counts(validation_report, taxonomy_report, min_valid, min_assigned):
     """
     Check if the validation and taxonomy reports meet the minimum counts.
@@ -130,7 +99,6 @@ def validate_file_pair(
     yaml_path: str,
     work_dir: str,
     taxdump_path: Optional[str] = None,
-    s3_path: Optional[str] = None,
     min_valid: int = 1,
     min_assigned: int = 1,
 ) -> bool:
@@ -144,7 +112,6 @@ def validate_file_pair(
         yaml_path (str): Path to the source YAML file.
         work_dir (str): Path to the working directory.
         taxdump_path (str): Path to an NCBI format taxdump.
-        s3_path (str): Path to the TSV directory on S3.
         min_valid (int): Minimum expected number of valid rows.
         min_assigned (int): Minimum expected number of assigned taxa.
 
@@ -153,15 +120,12 @@ def validate_file_pair(
     """
     yaml_file_name = os.path.basename(yaml_path)
     local_yaml_path = os.path.join(work_dir, yaml_file_name)
-    (status, validation_report, taxonomy_report) = validate_yaml_file(
+    status, validation_report, taxonomy_report = validate_yaml_file(
         local_yaml_path, taxdump_path, min_valid, min_assigned
     )
 
     if status:
         check_min_counts(validation_report, taxonomy_report, min_valid, min_assigned)
-
-    if s3_path is not None:
-        transfer_validated(local_yaml_path, work_dir, s3_path)
 
     emit_event(
         event="validate.file.pair.finished",
@@ -175,8 +139,47 @@ def validate_file_pair(
     return status
 
 
+@flow()
+def validate_and_publish(
+    yaml_path: str,
+    work_dir: str,
+    taxdump_path: Optional[str] = None,
+    s3_path: Optional[str] = None,
+    min_valid: int = 1,
+    min_assigned: int = 1,
+    per_file_subdir: bool = False,
+    dry_run: bool = False,
+) -> bool:
+    """
+    Validate a YAML/TSV pair in the work directory and publish it to S3 if it passes.
+
+    Args:
+        yaml_path (str): Path to the source YAML file.
+        work_dir (str): Path to the working directory.
+        taxdump_path (str): Path to an NCBI format taxdump.
+        s3_path (str): Path to the TSV directory on S3. Publishing is skipped if None.
+        min_valid (int): Minimum expected number of valid rows.
+        min_assigned (int): Minimum expected number of assigned taxa.
+        per_file_subdir (bool): Publish each pair to its own subdirectory.
+        dry_run (bool): Log the publish destinations without uploading.
+
+    Returns:
+        bool: True if the pair validated.
+    """
+    status = validate_file_pair(yaml_path, work_dir, taxdump_path, min_valid, min_assigned)
+    if status and s3_path is not None:
+        # blobtk writes the validated pair to a validated/ directory beside the working YAML
+        validated_yaml_path = os.path.join(work_dir, "validated", os.path.basename(yaml_path))
+        utils.publish_validated_pair(
+            validated_yaml_path,
+            theme=utils.theme_from_s3_path(s3_path),
+            per_file_subdir=per_file_subdir,
+            dry_run=dry_run,
+        )
+    return status
+
+
 if __name__ == "__main__":
     """Run the flow."""
     args = parse_args("Validate a YAML/TSV file pair.")
-    validate_file_pair(**vars(args))
     validate_file_pair(**vars(args))

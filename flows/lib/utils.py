@@ -888,6 +888,71 @@ def upload_to_s3(local_path: str, s3_path: str, gz: bool = False) -> None:
         raise e
 
 
+VALIDATED_S3_ROOT = "s3://goat/validated"
+
+
+def theme_from_s3_path(s3_path: str) -> str:
+    """
+    Get the theme from a sources S3 path, falling back to "general".
+
+    Args:
+        s3_path (str): S3 path, e.g. s3://goat/sources/assembly-data/.
+
+    Returns:
+        str: The path segment after "sources", or "general".
+    """
+    parts = [part for part in s3_path.removeprefix("s3://").split("/") if part]
+    if "sources" in parts[1:] and parts.index("sources") + 1 < len(parts):
+        return parts[parts.index("sources") + 1]
+    return "general"
+
+
+def publish_validated_pair(
+    validated_yaml_path: str,
+    theme: str,
+    per_file_subdir: bool = False,
+    dry_run: bool = False,
+    root: str = VALIDATED_S3_ROOT,
+) -> tuple[str, str]:
+    """
+    Upload a validated YAML/TSV pair to S3.
+
+    The TSV is named by the file.name in the validated YAML and must sit beside it.
+
+    Args:
+        validated_yaml_path (str): Path to the validated YAML written by blobtk.
+        theme (str): Theme directory under the validated root.
+        per_file_subdir (bool): Place the pair in a subdirectory named after the TSV.
+        dry_run (bool): Log the destinations without uploading.
+        root (str): S3 root for validated outputs.
+
+    Returns:
+        tuple[str, str]: S3 paths of the uploaded (or would-be) TSV and YAML.
+
+    Raises:
+        FileNotFoundError: If the validated TSV is missing.
+    """
+    tsv_name = gh_utils.load_yaml(validated_yaml_path)["file"]["name"]
+    local_tsv_path = os.path.join(os.path.dirname(validated_yaml_path), tsv_name)
+    if not os.path.exists(local_tsv_path):
+        raise FileNotFoundError(f"Validated TSV not found: {local_tsv_path}")
+
+    dest_dir = f"{root.rstrip('/')}/{theme}"
+    if per_file_subdir:
+        pair_stem = re.sub(r"\.tsv(\.gz)?$", "", tsv_name)
+        dest_dir = f"{dest_dir}/{pair_stem}"
+    remote_tsv_path = f"{dest_dir}/{tsv_name}"
+    remote_yaml_path = f"{dest_dir}/{os.path.basename(validated_yaml_path)}"
+
+    for local_path, remote_path in ((local_tsv_path, remote_tsv_path), (validated_yaml_path, remote_yaml_path)):
+        if dry_run:
+            print(f"[dry run] Would upload {local_path} to {remote_path}")
+        else:
+            upload_to_s3(local_path, remote_path)
+            print(f"Uploaded {local_path} to {remote_path}")
+    return remote_tsv_path, remote_yaml_path
+
+
 def parse_s3_file(data_freeze_path: str) -> dict:
     """
     Fetch and parse a 2-column TSV from the given S3 path.

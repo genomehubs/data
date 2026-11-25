@@ -174,14 +174,13 @@ def local_fetch_parse_validate(
     )
     print("[local] Parser completed")
 
-    # Step 4: Validate (no S3 upload — s3_path=None)
+    # Step 4: Validate (no S3 publish)
     if _check_blobtk():
         print("[local] Running validation...")
         status = validate_file_pair(
             yaml_path=yaml_path,
             work_dir=work_dir,
             taxdump_path=taxdump_path,
-            s3_path=None,
             min_valid=min_valid,
             min_assigned=min_assigned,
         )
@@ -203,7 +202,8 @@ def main():
         epilog=__doc__,
     )
     arg_parser.add_argument(
-        "-p", "--parser",
+        "-p",
+        "--parser",
         required=True,
         type=str,
         action=enum_action(PARSERS.ParserEnum),
